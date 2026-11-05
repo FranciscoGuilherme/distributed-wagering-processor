@@ -1,7 +1,11 @@
-import { Column, Entity } from 'typeorm';
+import { Check, Column, Entity, Unique } from 'typeorm';
 import BaseModel from './base.model';
 
 @Entity({ name: 'wallets' })
+@Unique('uq_wallets_player_currency', ['playerId', 'currency'])
+@Check('ck_wallets_balance_nonnegative', '"balance_amount" >= 0')
+@Check('ck_wallets_version_positive', '"version" >= 1')
+@Check('ck_wallets_currency_length', 'char_length(currency) = 3')
 export default class WalletModel extends BaseModel {
   @Column({ type: 'uuid', name: 'player_id' })
   declare playerId: string;

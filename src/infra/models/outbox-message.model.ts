@@ -1,7 +1,11 @@
-import { Column, Entity } from 'typeorm';
+import { Check, Column, Entity, Index } from 'typeorm';
 import BaseModel from './base.model';
 
 @Entity({ name: 'outbox_messages' })
+@Check('ck_outbox_messages_attempts_nonnegative', '"attempts" >= 0')
+@Index('ix_outbox_messages_pending_retry', ['nextAttemptAt', 'occurredAt'], {
+  where: '"published_at" IS NULL',
+})
 export class OutboxMessageModel extends BaseModel {
   @Column({ type: 'uuid', name: 'aggregate_id' })
   declare aggregateId: string;

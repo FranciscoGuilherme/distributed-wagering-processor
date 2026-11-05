@@ -29,6 +29,6 @@ export default class WalletLedgerEntryRepository implements WalletLedgerEntryInt
   }
 
   async create(entity: WalletLedgerEntry): Promise<void> {
-    await this.repository.save(WalletLedgerEntryMapper.toPersistence(entity));
+    await this.repository.insert(WalletLedgerEntryMapper.toPersistence(entity));
   }
 }

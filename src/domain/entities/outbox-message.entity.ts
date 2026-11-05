@@ -1,0 +1,29 @@
+import Entity from '../@shared/entity';
+import UniqueEntityId from '../@shared/value-objects/unique-entity-id.vo';
+
+export type OutboxMessageProps = {
+  aggregateId: string;
+  eventType: string;
+  payload: Readonly<Record<string, unknown>>;
+  occurredAt: Date;
+  _attempts: number;
+  _nextAttemptAt?: Date;
+  _publishedAt?: Date;
+};
+
+export default class OutboxMessage extends Entity<OutboxMessageProps> {
+  public readonly aggregateId!: string;
+  public readonly eventType!: string;
+  public readonly payload!: Readonly<Record<string, unknown>>;
+  public readonly occurredAt!: Date;
+  private _attempts!: number;
+  private _nextAttemptAt!: Date;
+  private _publishedAt!: Date;
+
+  constructor(props: OutboxMessageProps, id?: string) {
+    super(props, new UniqueEntityId(id));
+    this.validate();
+  }
+
+  validate(): void {}
+}

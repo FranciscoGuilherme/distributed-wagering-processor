@@ -1,8 +1,9 @@
+import Decimal from 'decimal.js';
 import Entity from '../@shared/entity';
 import Money from '../@shared/value-objects/money.vo';
 import UniqueEntityId from '../@shared/value-objects/unique-entity-id.vo';
 
-enum WagerTransactionKind {
+export enum WagerTransactionKind {
   Opening = 'OPENING',
   Bet = 'BET',
   Win = 'WIN',
@@ -11,7 +12,7 @@ enum WagerTransactionKind {
   Rollback = 'ROLLBACK',
 }
 
-enum WagerTransactionStatus {
+export enum WagerTransactionStatus {
   Pending = 'PENDING', // aceita, ainda não aplicada
   PendingReference = 'PENDING_REFERENCE', // aguardando a transação referenciada
   Processed = 'PROCESSED', // aplicada (terminal)
@@ -31,38 +32,62 @@ export type WagerTransactionProps = {
   playerId: string;
   roundId: string;
   gameId: string;
-  kind: WagerTransactionKind;
-  money: Money;
-  referenceExternalTransactionId: string | undefined;
+  kind: string;
+  money: {
+    amount: string;
+    currency: string;
+  };
+  referenceExternalTransactionId: string;
   createdAt: Date;
-  _status: WagerTransactionStatus;
-  _referenceTransactionId?: string;
-  _failureCode?: FailureCode;
-  _processedAt?: Date;
+  status: string;
+  referenceTransactionId?: string;
+  failureCode?: string;
+  processedAt?: Date;
 };
 
 export default class WagerTransaction extends Entity<WagerTransactionProps> {
-  public readonly providerId!: string;
-  public readonly externalTransactionId!: string;
-  public readonly idempotencyKey!: string;
-  public readonly payloadHash!: string;
-  public readonly walletId!: string;
-  public readonly playerId!: string;
-  public readonly roundId!: string;
-  public readonly gameId!: string;
-  public readonly kind!: WagerTransactionKind;
-  public readonly money!: Money;
-  public readonly referenceExternalTransactionId!: string | undefined;
-  public readonly createdAt!: Date;
-  private _status!: WagerTransactionStatus;
-  private _referenceTransactionId!: string;
-  private _failureCode!: FailureCode;
-  private _processedAt!: Date;
+  public readonly providerId: string;
+  public readonly externalTransactionId: string;
+  public readonly idempotencyKey: string;
+  public readonly payloadHash: string;
+  public readonly walletId: string;
+  public readonly playerId: string;
+  public readonly roundId: string;
+  public readonly gameId: string;
+  public readonly kind: WagerTransactionKind;
+  public readonly money: Money;
+  public readonly referenceExternalTransactionId: string;
+  public readonly createdAt: Date;
+  private _status: WagerTransactionStatus;
+  private _referenceTransactionId?: string;
+  private _failureCode?: FailureCode;
+  private _processedAt?: Date;
 
   constructor(props: WagerTransactionProps, id?: string) {
     super(props, new UniqueEntityId(id));
-    Object.assign(this, props);
+    this.providerId = props.providerId;
+    this.externalTransactionId = props.externalTransactionId;
+    this.idempotencyKey = props.idempotencyKey;
+    this.payloadHash = props.payloadHash;
+    this.walletId = props.walletId;
+    this.playerId = props.playerId;
+    this.roundId = props.roundId;
+    this.gameId = props.gameId;
+    this.kind = props.kind as WagerTransactionKind;
+    this.money = new Money({
+      amount: new Decimal(props.money.amount),
+      currency: props.money.currency,
+    });
+    this.referenceExternalTransactionId = props.referenceExternalTransactionId;
+    this.createdAt = props.createdAt;
+    this._status = props.status as WagerTransactionStatus;
+    this._referenceTransactionId = props?.referenceTransactionId;
+    this._failureCode = props?.failureCode as FailureCode;
+    this._processedAt = props?.processedAt;
+    this.validate();
   }
+
+  validate(): void {}
 
   get status(): WagerTransactionStatus {
     return this._status;
@@ -78,6 +103,35 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
 
   get processedAt(): Date | undefined {
     return this._processedAt;
+  }
+
+  markProcessed(): void {
+    this.assertNotTerminal();
+    this._status = WagerTransactionStatus.Processed;
+  }
+
+  markPendingReference(): void {
+    this.assertNotTerminal();
+    this._status = WagerTransactionStatus.PendingReference;
+  }
+
+  reject(): void {
+    this.assertNotTerminal();
+    this._status = WagerTransactionStatus.Rejected;
+  }
+
+  private assertNotTerminal(): void {
+    const terminalStatuses = [
+      WagerTransactionStatus.Processed,
+      WagerTransactionStatus.Rejected,
+      WagerTransactionStatus.Failed,
+    ];
+
+    if (terminalStatuses.includes(this._status)) {
+      throw new Error(
+        `Cannot transition terminal transaction: ${this._status}`,
+      );
+    }
   }
 }
 

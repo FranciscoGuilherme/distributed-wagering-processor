@@ -4,4 +4,5 @@ import WalletAggregate from '../entities/wallet.aggregate';
 
 export default interface WalletRepositoryInterface extends RepositoryInterface<WalletAggregate> {
   withTransaction(manager: EntityManager): WalletRepositoryInterface;
+  findByIdForUpdate(id: string): Promise<WalletAggregate | null>;
 }

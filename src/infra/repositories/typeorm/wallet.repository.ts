@@ -24,6 +24,14 @@ export default class WalletRepository implements WalletRepositoryInterface {
     return model ? WalletMapper.toEntity(model) : null;
   }
 
+  async findByIdForUpdate(id: string): Promise<WalletAggregate | null> {
+    const model = await this.repository.findOne({
+      where: { id },
+      lock: { mode: 'pessimistic_write' },
+    });
+    return model ? WalletMapper.toEntity(model) : null;
+  }
+
   async create(wallet: WalletAggregate): Promise<void> {
     await this.repository.save(WalletMapper.toPersistence(wallet));
   }

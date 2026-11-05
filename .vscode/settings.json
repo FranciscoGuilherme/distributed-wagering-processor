@@ -23,6 +23,9 @@
   "[typescriptreact]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "explicit"
+  },
   "separators.enabledSymbols": [
     "Constructors",
     "Enums",

@@ -9,14 +9,17 @@ export type InboxMessageProps = {
 };
 
 export default class InboxMessage extends Entity<InboxMessageProps> {
-  public readonly consumerName!: string;
-  public readonly payloadHash!: string;
-  public readonly receivedAt!: Date;
-  private _processedAt!: Date;
+  public readonly consumerName: string;
+  public readonly payloadHash: string;
+  public readonly receivedAt: Date;
+  private _processedAt?: Date;
 
   constructor(props: InboxMessageProps, id?: string) {
     super(props, new UniqueEntityId(id));
-    this.validate();
+    this.consumerName = props.consumerName;
+    this.payloadHash = props.payloadHash;
+    this.receivedAt = props.receivedAt;
+    this._processedAt = props.processedAt;
   }
 
   validate(): void {}

@@ -17,12 +17,21 @@ export default class WagerTransactionMapper {
         amount: model.amount,
         currency: model.currency,
       },
-      referenceExternalTransactionId: model.referenceExternalTransactionId,
+      referenceExternalTransactionId:
+        model.referenceExternalTransactionId ?? undefined,
       createdAt: model.createdAt,
       status: model.status,
-      referenceTransactionId: model.referenceTransactionId,
-      failureCode: model.failureCode,
-      processedAt: model.processedAt,
+      referenceTransactionId: model.referenceTransactionId ?? undefined,
+      failureCode: model.failureCode ?? undefined,
+      processedAt: model.processedAt ?? undefined,
+      resultBalance:
+        model.resultBalanceAmount !== null &&
+        model.resultBalanceCurrency !== null
+          ? {
+              amount: model.resultBalanceAmount,
+              currency: model.resultBalanceCurrency,
+            }
+          : undefined,
     }, model.id);
   }
 
@@ -40,12 +49,15 @@ export default class WagerTransactionMapper {
       kind: entity.kind,
       amount: entity.money.value.amount.toString(),
       currency: entity.money.value.currency,
-      referenceExternalTransactionId: entity.referenceExternalTransactionId,
+      referenceExternalTransactionId:
+        entity.referenceExternalTransactionId ?? null,
       status: entity.status,
       createdAt: entity.createdAt,
-      referenceTransactionId: entity.referenceTransactionId,
-      failureCode: entity.failureCode,
-      processedAt: entity.processedAt,
+      referenceTransactionId: entity.referenceTransactionId ?? null,
+      failureCode: entity.failureCode ?? null,
+      processedAt: entity.processedAt ?? null,
+      resultBalanceAmount: entity.resultBalance?.amount ?? null,
+      resultBalanceCurrency: entity.resultBalance?.currency ?? null,
     };
   }
 }

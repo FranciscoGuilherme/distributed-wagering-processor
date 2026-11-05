@@ -6,6 +6,7 @@ export default class InboxMessageMapper {
     return new InboxMessage(
       {
         consumerName: model.consumerName,
+        messageId: model.messageId,
         payloadHash: model.payloadHash,
         receivedAt: model.receivedAt,
         processedAt: model.processedAt ?? undefined,
@@ -19,6 +20,7 @@ export default class InboxMessageMapper {
       id: entity.id,
       createdAt: entity.receivedAt,
       consumerName: entity.consumerName,
+      messageId: entity.messageId,
       payloadHash: entity.payloadHash,
       receivedAt: entity.receivedAt,
       processedAt: entity.processedAt ?? null,

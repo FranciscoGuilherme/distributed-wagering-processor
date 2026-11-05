@@ -75,6 +75,7 @@ import { WagerTransactionModel } from './infra/models/wager-transaction.model';
         database: config.get<string>('DB_NAME'),
         autoLoadEntities: true,
         synchronize: false,
+        migrationsRun: false,
       }),
     }),
   ],

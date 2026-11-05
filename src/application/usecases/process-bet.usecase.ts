@@ -16,6 +16,7 @@ import { WALLET_LEDGER_ENTRY_REPOSITORY } from '../../infra/repositories/typeorm
 import { LedgerDirection } from '../../domain/entities/wallet-ledger-entry.entity';
 import { createHash } from 'crypto';
 import IdempotencyConflictError from '../../domain/@shared/errors/idempotency-conflict.error';
+import WagerTransaction from '../../domain/entities/wager-transaction.entity';
 
 export type ProcessBetProps = {
   idempotencyKey: string;
@@ -52,95 +53,112 @@ export default class ProcessBet {
   ) {}
 
   async execute(props: ProcessBetProps): Promise<ProcessBetResult> {
-    return this.uow.execute(async (manager: EntityManager) => {
-      const walletRepository = this.walletRepository.withTransaction(manager);
-      const walletLedgerEntryRepository =
-        this.walletLedgerEntryRepository.withTransaction(manager);
-      const wagerTransactionRepository =
-        this.wagerTransactionRepository.withTransaction(manager);
+    const payloadHash = this.createPayloadHash(props);
 
-      const payloadHash = this.createPayloadHash(props);
-      const existing = await wagerTransactionRepository.findByIdempotencyKey(
-        props.idempotencyKey,
-      );
+    try {
+      return await this.uow.execute(async (manager: EntityManager) => {
+        const walletRepository = this.walletRepository.withTransaction(manager);
+        const walletLedgerEntryRepository =
+          this.walletLedgerEntryRepository.withTransaction(manager);
+        const wagerTransactionRepository =
+          this.wagerTransactionRepository.withTransaction(manager);
 
-      if (existing) {
-        if (existing.payloadHash !== payloadHash) {
-          throw new IdempotencyConflictError(
-            'A Idempotency-Key já foi usada com outro payload',
-          );
+        const existing = await wagerTransactionRepository.findByIdempotencyKey(
+          props.idempotencyKey,
+        );
+        if (existing) {
+          return this.toReplayResult(existing, payloadHash);
         }
 
-        if (!existing.resultBalance) {
-          throw new Error(
-            `A transação ${existing.id} não tem o saldo do resultado salvo`,
-          );
+        const wagerTransaction = WagerTransactionFactory.create({
+          providerId: props.providerId,
+          externalTransactionId: props.externalTransactionId,
+          idempotencyKey: props.idempotencyKey,
+          payloadHash,
+          walletId: props.walletId,
+          playerId: props.playerId,
+          roundId: props.roundId,
+          gameId: props.gameId,
+          kind: props.kind,
+          money: props.money,
+          status: WagerTransactionStatus.Pending,
+        });
+        await wagerTransactionRepository.create(wagerTransaction);
+
+        const wallet = await walletRepository.findByIdForUpdate(props.walletId);
+        if (!wallet) {
+          throw new Error(`Wallet not found: ${props.walletId}`);
         }
+
+        const money = new Money({
+          amount: new Decimal(props.money.amount),
+          currency: props.money.currency,
+        });
+
+        const balanceBefore = wallet.balance;
+        wallet.credit(money);
+        const balanceAfter = this.toBalanceSnapshot(wallet.balance);
+
+        await walletRepository.create(wallet);
+        await walletLedgerEntryRepository.create(
+          WalletLedgerEntryFactory.create({
+            walletId: wallet.id,
+            transactionId: wagerTransaction.id,
+            direction: LedgerDirection.Credit,
+            money: {
+              amount: money.value.amount.toFixed(2),
+              currency: money.value.currency,
+            },
+            balanceBefore: this.toBalanceSnapshot(balanceBefore),
+            balanceAfter,
+            createdAt: wagerTransaction.createdAt,
+          }),
+        );
+
+        wagerTransaction.markProcessed(balanceAfter);
+        await wagerTransactionRepository.create(wagerTransaction);
 
         return {
-          transactionId: existing.id,
-          status: existing.status,
-          balance: existing.resultBalance,
-          idempotentReplay: true,
-        };
-      }
-
-      const wallet = await walletRepository.findById(props.walletId);
-      if (!wallet) {
-        throw new Error(`Wallet not found: ${props.walletId}`);
-      }
-
-      const wagerTransaction = WagerTransactionFactory.create({
-        providerId: props.providerId,
-        externalTransactionId: props.externalTransactionId,
-        idempotencyKey: props.idempotencyKey,
-        payloadHash,
-        walletId: props.walletId,
-        playerId: props.playerId,
-        roundId: props.roundId,
-        gameId: props.gameId,
-        kind: props.kind,
-        money: props.money,
-        referenceExternalTransactionId: '',
-        status: WagerTransactionStatus.Pending,
-      });
-
-      const money = new Money({
-        amount: new Decimal(props.money.amount),
-        currency: props.money.currency,
-      });
-
-      const balanceBefore = wallet.balance;
-      wallet.credit(money);
-
-      const balanceAfter = this.toBalanceSnapshot(wallet.balance);
-
-      await walletRepository.create(wallet);
-      await walletLedgerEntryRepository.create(
-        WalletLedgerEntryFactory.create({
-          walletId: wallet.id,
           transactionId: wagerTransaction.id,
-          direction: LedgerDirection.Credit,
-          money: {
-            amount: money.value.amount.toFixed(2),
-            currency: money.value.currency,
-          },
-          balanceBefore: this.toBalanceSnapshot(balanceBefore),
-          balanceAfter,
-          createdAt: wagerTransaction.createdAt,
-        }),
+          status: wagerTransaction.status,
+          balance: balanceAfter,
+          idempotentReplay: false,
+        };
+      });
+    } catch (error) {
+      const existing =
+        await this.wagerTransactionRepository.findByIdempotencyKey(
+          props.idempotencyKey,
+        );
+      if (!existing) {
+        throw error;
+      }
+      return this.toReplayResult(existing, payloadHash);
+    }
+  }
+
+  private toReplayResult(
+    existing: WagerTransaction,
+    payloadHash: string,
+  ): ProcessBetResult {
+    if (existing.payloadHash !== payloadHash) {
+      throw new IdempotencyConflictError(
+        'A Idempotency-Key já foi usada com outro payload',
       );
+    }
 
-      wagerTransaction.markProcessed(balanceAfter);
-      await wagerTransactionRepository.create(wagerTransaction);
+    if (!existing.resultBalance) {
+      throw new Error(
+        `A transação ${existing.id} não tem o saldo do resultado salvo`,
+      );
+    }
 
-      return {
-        transactionId: wagerTransaction.id,
-        status: wagerTransaction.status,
-        balance: balanceAfter,
-        idempotentReplay: false,
-      };
-    });
+    return {
+      transactionId: existing.id,
+      status: existing.status,
+      balance: existing.resultBalance,
+      idempotentReplay: true,
+    };
   }
 
   private createPayloadHash(props: ProcessBetProps): string {

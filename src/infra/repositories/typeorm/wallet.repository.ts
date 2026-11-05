@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
-import WalletRepositoryInterface from '../../../domain/repositories/wallet-repository.interface';
 import WalletAggregate from '../../../domain/entities/wallet.aggregate';
+import WalletRepositoryInterface from '../../../domain/repositories/wallet-repository.interface';
 import WalletMapper from '../../mappers/wallet.mapper';
 import WalletModel from '../../models/wallet.model';
 

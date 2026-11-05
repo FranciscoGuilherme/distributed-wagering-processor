@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { EntityManager, Repository } from 'typeorm';
-import WalletLedgerEntryInterface from '../../../domain/repositories/wallet-ledger-entry.interface';
-import WalletLedgerEntryModel from '../../models/wallet-ledger-entry.model';
 import { InjectRepository } from '@nestjs/typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import WalletLedgerEntry from '../../../domain/entities/wallet-ledger-entry.entity';
+import WalletLedgerEntryInterface from '../../../domain/repositories/wallet-ledger-entry.interface';
 import WalletLedgerEntryMapper from '../../mappers/wallet-ledger-entry.mapper';
+import WalletLedgerEntryModel from '../../models/wallet-ledger-entry.model';
 
 export const WALLET_LEDGER_ENTRY_REPOSITORY = Symbol(
   'WALLET_LEDGER_ENTRY_REPOSITORY',

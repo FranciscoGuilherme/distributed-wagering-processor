@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js';
-import { ValueObject } from './value-object';
 import MoneyCurrencyError from '../errors/money-currency.error';
+import { ValueObject } from './value-object';
 
 interface MoneyProps {
   amount: Decimal;

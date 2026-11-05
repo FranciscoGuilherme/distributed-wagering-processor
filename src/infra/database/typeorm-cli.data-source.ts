@@ -1,5 +1,5 @@
-import 'reflect-metadata';
 import { join } from 'node:path';
+import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 
 const dataSource = new DataSource({

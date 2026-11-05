@@ -1,16 +1,21 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import ProcessBet from './application/usecases/process-bet.usecase';
-import WagerTransactionRepository, {
-  WAGER_TRANSACTION_REPOSITORY,
-} from './infra/repositories/typeorm/wager-transaction.repository';
+import ProcessBet from './application/usecases/process-operation.usecase';
+import { InboxMessageModel } from './infra/models/inbox-message.model';
+import { OutboxMessageModel } from './infra/models/outbox-message.model';
+import { WagerTransactionModel } from './infra/models/wager-transaction.model';
+import WalletLedgerEntryModel from './infra/models/wallet-ledger-entry.model';
+import WalletModel from './infra/models/wallet.model';
 import InboxMessageRepository, {
   INBOX_MESSAGE_REPOSITORY,
 } from './infra/repositories/typeorm/inbox-message.repository';
 import OutboxMessageRepository, {
   OUTBOX_MESSAGE_REPOSITORY,
 } from './infra/repositories/typeorm/outbox-message.repository';
+import WagerTransactionRepository, {
+  WAGER_TRANSACTION_REPOSITORY,
+} from './infra/repositories/typeorm/wager-transaction.repository';
 import WalletLedgerEntryRepository, {
   WALLET_LEDGER_ENTRY_REPOSITORY,
 } from './infra/repositories/typeorm/wallet-ledger-entry.repository';
@@ -18,11 +23,6 @@ import WalletRepository, {
   WALLET_REPOSITORY,
 } from './infra/repositories/typeorm/wallet.repository';
 import { UnitOfWork } from './infra/repositories/unit-of-work';
-import { InboxMessageModel } from './infra/models/inbox-message.model';
-import { OutboxMessageModel } from './infra/models/outbox-message.model';
-import WalletLedgerEntryModel from './infra/models/wallet-ledger-entry.model';
-import WalletModel from './infra/models/wallet.model';
-import { WagerTransactionModel } from './infra/models/wager-transaction.model';
 
 @Module({
   providers: [

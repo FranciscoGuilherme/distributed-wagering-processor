@@ -1,8 +1,8 @@
+import Decimal from 'decimal.js';
 import { AggregateRoot } from '../@shared/aggregate-root';
+import BalanceError from '../@shared/errors/balance.error';
 import Money from '../@shared/value-objects/money.vo';
 import UniqueEntityId from '../@shared/value-objects/unique-entity-id.vo';
-import BalanceError from '../@shared/errors/balance.error';
-import Decimal from 'decimal.js';
 
 export type WalletProps = {
   id: string;

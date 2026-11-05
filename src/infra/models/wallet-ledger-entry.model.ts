@@ -1,7 +1,7 @@
 import { Check, Column, Entity, ForeignKey, Index, Unique } from 'typeorm';
 import BaseModel from './base.model';
-import WalletModel from './wallet.model';
 import { WagerTransactionModel } from './wager-transaction.model';
+import WalletModel from './wallet.model';
 
 @Entity({ name: 'wallet_ledger_entries' })
 @Unique('uq_wallet_ledger_entries_transaction_wallet', [

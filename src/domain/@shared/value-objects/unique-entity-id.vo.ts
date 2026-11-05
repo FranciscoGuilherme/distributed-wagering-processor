@@ -1,6 +1,6 @@
 import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
-import { ValueObject } from './value-object';
 import UniqueEntityIdError from '../errors/unique-entity-id.error';
+import { ValueObject } from './value-object';
 
 export default class UniqueEntityId extends ValueObject<string> {
   constructor(readonly id?: string) {

@@ -1,5 +1,6 @@
 {
   "conventionalCommits.scopes": [
+    "application",
     "project",
     "domain",
     "config",

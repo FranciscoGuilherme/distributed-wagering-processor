@@ -6,6 +6,7 @@ import { EntityManager } from 'typeorm';
 import Decimal from 'decimal.js';
 import Money from '../../domain/@shared/value-objects/money.vo';
 import { WagerTransactionStatus } from '../../domain/entities/wager-transaction.entity';
+import type { WagerTransactionBalance } from '../../domain/entities/wager-transaction.entity';
 import WagerTransactionFactory from '../../domain/factories/wager-transaction.factory';
 import WalletLedgerEntryFactory from '../../domain/factories/wallet-ledger-entry.factory';
 import type WalletRepositoryInterface from '../../domain/repositories/wallet-repository.interface';
@@ -13,6 +14,8 @@ import type WalletLedgerEntryInterface from '../../domain/repositories/wallet-le
 import { WALLET_REPOSITORY } from '../../infra/repositories/typeorm/wallet.repository';
 import { WALLET_LEDGER_ENTRY_REPOSITORY } from '../../infra/repositories/typeorm/wallet-ledger-entry.repository';
 import { LedgerDirection } from '../../domain/entities/wallet-ledger-entry.entity';
+import { createHash } from 'crypto';
+import IdempotencyConflictError from '../../domain/@shared/errors/idempotency-conflict.error';
 
 export type ProcessBetProps = {
   idempotencyKey: string;
@@ -29,6 +32,13 @@ export type ProcessBetProps = {
   };
 };
 
+export type ProcessBetResult = {
+  transactionId: string;
+  status: WagerTransactionStatus;
+  balance: WagerTransactionBalance;
+  idempotentReplay: boolean;
+};
+
 @Injectable()
 export default class ProcessBet {
   constructor(
@@ -41,23 +51,38 @@ export default class ProcessBet {
     private readonly walletLedgerEntryRepository: WalletLedgerEntryInterface,
   ) {}
 
-  async execute(props: ProcessBetProps): Promise<void> {
-    // TODO: Criar ou localizar a WagerTransaction usando o provedor e o identificador externo.
-    await this.uow.execute(async (manager: EntityManager) => {
-      const wagerTransactionRepository =
-        this.wagerTransactionRepository.withTransaction(manager);
+  async execute(props: ProcessBetProps): Promise<ProcessBetResult> {
+    return this.uow.execute(async (manager: EntityManager) => {
       const walletRepository = this.walletRepository.withTransaction(manager);
       const walletLedgerEntryRepository =
         this.walletLedgerEntryRepository.withTransaction(manager);
+      const wagerTransactionRepository =
+        this.wagerTransactionRepository.withTransaction(manager);
 
+      const payloadHash = this.createPayloadHash(props);
       const existing = await wagerTransactionRepository.findByIdempotencyKey(
         props.idempotencyKey,
       );
 
       if (existing) {
-        // Comparar payloadHash:
-        // igual = replay; diferente = conflito.
-        return;
+        if (existing.payloadHash !== payloadHash) {
+          throw new IdempotencyConflictError(
+            'A Idempotency-Key já foi usada com outro payload',
+          );
+        }
+
+        if (!existing.resultBalance) {
+          throw new Error(
+            `A transação ${existing.id} não tem o saldo do resultado salvo`,
+          );
+        }
+
+        return {
+          transactionId: existing.id,
+          status: existing.status,
+          balance: existing.resultBalance,
+          idempotentReplay: true,
+        };
       }
 
       const wallet = await walletRepository.findById(props.walletId);
@@ -65,11 +90,11 @@ export default class ProcessBet {
         throw new Error(`Wallet not found: ${props.walletId}`);
       }
 
-      const transaction = WagerTransactionFactory.create({
+      const wagerTransaction = WagerTransactionFactory.create({
         providerId: props.providerId,
         externalTransactionId: props.externalTransactionId,
         idempotencyKey: props.idempotencyKey,
-        payloadHash: '',
+        payloadHash,
         walletId: props.walletId,
         playerId: props.playerId,
         roundId: props.roundId,
@@ -79,42 +104,69 @@ export default class ProcessBet {
         referenceExternalTransactionId: '',
         status: WagerTransactionStatus.Pending,
       });
+
       const money = new Money({
         amount: new Decimal(props.money.amount),
         currency: props.money.currency,
       });
+
       const balanceBefore = wallet.balance;
       wallet.credit(money);
 
-      await wagerTransactionRepository.create(transaction);
+      const balanceAfter = this.toBalanceSnapshot(wallet.balance);
+
       await walletRepository.create(wallet);
       await walletLedgerEntryRepository.create(
         WalletLedgerEntryFactory.create({
           walletId: wallet.id,
-          transactionId: transaction.id,
+          transactionId: wagerTransaction.id,
           direction: LedgerDirection.Credit,
           money: {
-            amount: money.value.amount.toString(),
+            amount: money.value.amount.toFixed(2),
             currency: money.value.currency,
           },
-          balanceBefore: {
-            amount: balanceBefore.value.amount.toString(),
-            currency: balanceBefore.value.currency,
-          },
-          balanceAfter: {
-            amount: wallet.balance.value.amount.toString(),
-            currency: wallet.balance.value.currency,
-          },
-          createdAt: transaction.createdAt,
+          balanceBefore: this.toBalanceSnapshot(balanceBefore),
+          balanceAfter,
+          createdAt: wagerTransaction.createdAt,
         }),
       );
 
-      transaction.markProcessed();
-      await wagerTransactionRepository.create(transaction);
+      wagerTransaction.markProcessed(balanceAfter);
+      await wagerTransactionRepository.create(wagerTransaction);
+
+      return {
+        transactionId: wagerTransaction.id,
+        status: wagerTransaction.status,
+        balance: balanceAfter,
+        idempotentReplay: false,
+      };
     });
   }
-}
 
-// WagerTransaction: o pedido recebido e seu estado de processamento.
-// Wallet: o saldo e as regras para mudá-lo.
-// WalletLedgerEntry: a evidência de cada mudança efetiva no saldo.
+  private createPayloadHash(props: ProcessBetProps): string {
+    const canonicalPayload = {
+      externalTransactionId: props.externalTransactionId,
+      gameId: props.gameId,
+      kind: props.kind,
+      money: {
+        amount: props.money.amount,
+        currency: props.money.currency,
+      },
+      playerId: props.playerId,
+      providerId: props.providerId,
+      roundId: props.roundId,
+      walletId: props.walletId,
+    };
+
+    return createHash('sha256')
+      .update(JSON.stringify(canonicalPayload), 'utf8')
+      .digest('hex');
+  }
+
+  private toBalanceSnapshot(money: Money): WagerTransactionBalance {
+    return {
+      amount: money.value.amount.toFixed(2),
+      currency: money.value.currency,
+    };
+  }
+}

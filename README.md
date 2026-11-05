@@ -57,6 +57,35 @@ $ bun run test:e2e
 $ bun run test:cov
 ```
 
+## Database migrations
+
+The application does not run migrations automatically. Apply the schema explicitly
+against the intended local database:
+
+```bash
+# Inspect migration status
+bun run migration:show
+
+# Apply pending migrations
+bun run migration:run
+
+# Revert the most recently applied migration
+bun run migration:revert
+```
+
+Create an empty migration or generate one from model metadata (generation compares
+against the configured database):
+
+```bash
+bun run migration:create src/infra/database/migrations/DescribeChange
+bun run migration:generate src/infra/database/migrations/DescribeChange
+```
+
+The CLI uses `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, and `DB_NAME`, with the
+same local defaults as `.env.sample`. Review generated migrations before applying
+them. The initial schema migration creates the wagering tables; reverting it
+drops those tables, so only revert when that data is disposable.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

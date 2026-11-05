@@ -41,7 +41,7 @@ export type WagerTransactionProps = {
     amount: string;
     currency: string;
   };
-  referenceExternalTransactionId: string;
+  referenceExternalTransactionId?: string;
   createdAt?: Date;
   status: string;
   referenceTransactionId?: string;
@@ -61,7 +61,7 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
   public readonly gameId: string;
   public readonly kind: WagerTransactionKind;
   public readonly money: Money;
-  public readonly referenceExternalTransactionId: string;
+  public readonly referenceExternalTransactionId?: string;
   public readonly createdAt: Date;
   private _status: WagerTransactionStatus;
   private _referenceTransactionId?: string;

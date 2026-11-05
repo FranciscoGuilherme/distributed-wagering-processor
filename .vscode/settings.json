@@ -21,5 +21,15 @@
   },
   "[typescriptreact]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
-  }
+  },
+  "separators.enabledSymbols": [
+    "Constructors",
+    "Enums",
+    "Functions",
+    "Interfaces",
+    "Methods",
+    "Namespaces",
+    "Structs",
+    "Properties"
+  ]
 }

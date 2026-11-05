@@ -1,4 +1,3 @@
-import Decimal from 'decimal.js';
 import { AggregateRoot } from '../@shared/aggregate-root';
 import Money from '../@shared/value-objects/money.vo';
 import UniqueEntityId from '../@shared/value-objects/unique-entity-id.vo';
@@ -51,7 +50,10 @@ export default class WalletAggregate extends AggregateRoot<WalletProps> {
       throw new BalanceError('Insufficient balance');
     }
     this._version += 1;
-    this._balance.value.amount = newBalance;
+    this._balance = new Money({
+      amount: newBalance,
+      currency: this._balance.value.currency,
+    });
   }
 
   credit(amount: Money): void {
@@ -61,7 +63,10 @@ export default class WalletAggregate extends AggregateRoot<WalletProps> {
     }
     const newBalance = this._balance.value.amount.plus(amount.value.amount);
     this._version += 1;
-    this._balance.value.amount = newBalance;
+    this._balance = new Money({
+      amount: newBalance,
+      currency: this._balance.value.currency,
+    });
   }
 
   private assertSameCurrency(money: Money): void {

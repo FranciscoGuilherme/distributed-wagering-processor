@@ -23,7 +23,6 @@ export enum WagerTransactionStatus {
 export type FailureCode = 'BN-001' | 'BN-002' | 'BN-003';
 
 export type WagerTransactionProps = {
-  id: string;
   providerId: string;
   externalTransactionId: string;
   idempotencyKey: string;
@@ -38,7 +37,7 @@ export type WagerTransactionProps = {
     currency: string;
   };
   referenceExternalTransactionId: string;
-  createdAt: Date;
+  createdAt?: Date;
   status: string;
   referenceTransactionId?: string;
   failureCode?: string;
@@ -79,7 +78,7 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
       currency: props.money.currency,
     });
     this.referenceExternalTransactionId = props.referenceExternalTransactionId;
-    this.createdAt = props.createdAt;
+    this.createdAt = props?.createdAt || new Date();
     this._status = props.status as WagerTransactionStatus;
     this._referenceTransactionId = props?.referenceTransactionId;
     this._failureCode = props?.failureCode as FailureCode;

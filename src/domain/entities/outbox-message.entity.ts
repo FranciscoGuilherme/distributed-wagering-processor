@@ -31,5 +31,17 @@ export default class OutboxMessage extends Entity<OutboxMessageProps> {
     this._publishedAt = props.publishedAt;
   }
 
+  get attempts(): number {
+    return this._attempts;
+  }
+
+  get nextAttemptAt(): Date | undefined {
+    return this._nextAttemptAt;
+  }
+
+  get publishedAt(): Date | undefined {
+    return this._publishedAt;
+  }
+
   validate(): void {}
 }

@@ -3,7 +3,7 @@ import Entity from '../@shared/entity';
 import Money from '../@shared/value-objects/money.vo';
 import UniqueEntityId from '../@shared/value-objects/unique-entity-id.vo';
 
-enum LedgerDirection {
+export enum LedgerDirection {
   Debit = 'DEBIT',
   Credit = 'CREDIT',
 }

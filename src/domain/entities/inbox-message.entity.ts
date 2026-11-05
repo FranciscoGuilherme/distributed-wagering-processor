@@ -22,5 +22,9 @@ export default class InboxMessage extends Entity<InboxMessageProps> {
     this._processedAt = props.processedAt;
   }
 
+  get processedAt(): Date | undefined {
+    return this._processedAt;
+  }
+
   validate(): void {}
 }

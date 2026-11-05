@@ -45,6 +45,10 @@ export default class WalletAggregate extends AggregateRoot<WalletProps> {
     return this._balance;
   }
 
+  get createdAt(): Date {
+    return this.props.createdAt;
+  }
+
   get version(): number {
     return this._version;
   }
@@ -73,6 +77,7 @@ export default class WalletAggregate extends AggregateRoot<WalletProps> {
 
   private financialOperations(newAmount: Decimal) {
     this._version += 1;
+    this._updatedAt = new Date();
     this._balance = new Money({
       amount: newAmount,
       currency: this._balance.value.currency,

@@ -84,7 +84,6 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
     this._referenceTransactionId = props?.referenceTransactionId;
     this._failureCode = props?.failureCode as FailureCode;
     this._processedAt = props?.processedAt;
-    this.validate();
   }
 
   validate(): void {}

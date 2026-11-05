@@ -20,6 +20,11 @@ export enum WagerTransactionStatus {
   Failed = 'FAILED', // erro permanente de infraestrutura (terminal, auditável)
 }
 
+export type WagerTransactionBalance = {
+  amount: string;
+  currency: string;
+};
+
 export type FailureCode = 'BN-001' | 'BN-002' | 'BN-003';
 
 export type WagerTransactionProps = {
@@ -42,6 +47,7 @@ export type WagerTransactionProps = {
   referenceTransactionId?: string;
   failureCode?: string;
   processedAt?: Date;
+  resultBalance?: WagerTransactionBalance;
 };
 
 export default class WagerTransaction extends Entity<WagerTransactionProps> {
@@ -61,6 +67,7 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
   private _referenceTransactionId?: string;
   private _failureCode?: FailureCode;
   private _processedAt?: Date;
+  private _resultBalance?: WagerTransactionBalance;
 
   constructor(props: WagerTransactionProps, id?: string) {
     super(props, new UniqueEntityId(id));
@@ -83,6 +90,7 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
     this._referenceTransactionId = props?.referenceTransactionId;
     this._failureCode = props?.failureCode as FailureCode;
     this._processedAt = props?.processedAt;
+    this._resultBalance = props.resultBalance;
   }
 
   validate(): void {}
@@ -103,19 +111,27 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
     return this._processedAt;
   }
 
-  markProcessed(): void {
+  get resultBalance(): WagerTransactionBalance | undefined {
+    return this._resultBalance;
+  }
+
+  markProcessed(resultBalance: WagerTransactionBalance): void {
     this.assertNotTerminal();
     this._status = WagerTransactionStatus.Processed;
+    this._resultBalance = { ...resultBalance };
+    this._processedAt = new Date();
   }
 
   markPendingReference(): void {
     this.assertNotTerminal();
     this._status = WagerTransactionStatus.PendingReference;
+    this._processedAt = new Date();
   }
 
   reject(): void {
     this.assertNotTerminal();
     this._status = WagerTransactionStatus.Rejected;
+    this._processedAt = new Date();
   }
 
   private assertNotTerminal(): void {

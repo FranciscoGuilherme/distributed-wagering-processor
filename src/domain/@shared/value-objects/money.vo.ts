@@ -17,9 +17,6 @@ export default class Money extends ValueObject<MoneyProps> {
     if (this.value.amount.isNaN()) {
       throw new Error('Amount must be a valid decimal number');
     }
-    if (this.value.amount.isZero()) {
-      throw new Error('Amount cannot be zero');
-    }
     if (this.value.amount.isNegative()) {
       throw new Error('Amount cannot be negative');
     }

@@ -4,7 +4,6 @@ import { WagerTransactionModel } from '../models/wager-transaction.model';
 export default class WagerTransactionMapper {
   static toEntity(model: WagerTransactionModel): WagerTransaction {
     return new WagerTransaction({
-      id: model.id,
       providerId: model.providerId,
       externalTransactionId: model.externalTransactionId,
       idempotencyKey: model.idempotencyKey,
@@ -24,7 +23,7 @@ export default class WagerTransactionMapper {
       referenceTransactionId: model.referenceTransactionId,
       failureCode: model.failureCode,
       processedAt: model.processedAt,
-    });
+    }, model.id);
   }
 
   static toPersistence(entity: WagerTransaction): WagerTransactionModel {

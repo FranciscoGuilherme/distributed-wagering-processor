@@ -6,6 +6,9 @@ import BaseModel from './base.model';
 @Index('ix_outbox_messages_pending_retry', ['nextAttemptAt', 'occurredAt'], {
   where: '"published_at" IS NULL',
 })
+@Index('ix_outbox_messages_claim_lease', ['claimedUntil'], {
+  where: '"published_at" IS NULL',
+})
 export class OutboxMessageModel extends BaseModel {
   @Column({ type: 'uuid', name: 'aggregate_id' })
   declare aggregateId: string;
@@ -27,4 +30,10 @@ export class OutboxMessageModel extends BaseModel {
 
   @Column({ name: 'published_at', type: 'timestamptz', nullable: true })
   declare publishedAt: Date | null;
+
+  @Column({ name: 'claim_token', type: 'uuid', nullable: true })
+  declare claimToken: string | null;
+
+  @Column({ name: 'claimed_until', type: 'timestamptz', nullable: true })
+  declare claimedUntil: Date | null;
 }

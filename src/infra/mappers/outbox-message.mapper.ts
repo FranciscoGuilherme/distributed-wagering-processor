@@ -28,6 +28,8 @@ export default class OutboxMessageMapper {
       attempts: entity.attempts,
       nextAttemptAt: entity.nextAttemptAt ?? null,
       publishedAt: entity.publishedAt ?? null,
+      claimToken: null,
+      claimedUntil: null,
     };
   }
 }

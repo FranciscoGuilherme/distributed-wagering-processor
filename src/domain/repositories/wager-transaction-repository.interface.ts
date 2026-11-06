@@ -13,4 +13,8 @@ export default interface WagerTransactionRepositoryInterface extends RepositoryI
     providerId: string,
     externalTransactionId: string,
   ): Promise<WagerTransaction | null>;
+
+  findRefundByReferenceTransactionId(
+    referenceTransactionId: string,
+  ): Promise<WagerTransaction | null>;
 }

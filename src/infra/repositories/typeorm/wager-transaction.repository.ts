@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, QueryFailedError, Repository } from 'typeorm';
+import IdempotencyKeyAlreadyExistsError from '../../../domain/@shared/errors/idempotency-key-already-exists.error';
 import WagerTransaction, {
   WagerTransactionKind,
 } from '../../../domain/entities/wager-transaction.entity';
@@ -31,7 +32,17 @@ export default class WagerTransactionRepository implements WagerTransactionRepos
   }
 
   async create(entity: WagerTransaction): Promise<void> {
-    await this.repository.save(WagerTransactionMapper.toPersistence(entity));
+    try {
+      await this.repository.save(WagerTransactionMapper.toPersistence(entity));
+    } catch (error) {
+      if (!this.isIdempotencyKeyUniqueViolation(error)) {
+        throw error;
+      }
+
+      throw new IdempotencyKeyAlreadyExistsError(
+        'A transaction with this idempotency key already exists',
+      );
+    }
   }
 
   async findByIdempotencyKey(
@@ -71,5 +82,21 @@ export default class WagerTransactionRepository implements WagerTransactionRepos
       kind: WagerTransactionKind.Rollback,
     });
     return model ? WagerTransactionMapper.toEntity(model) : null;
+  }
+
+  private isIdempotencyKeyUniqueViolation(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+
+    const driverError = error.driverError as {
+      code?: string;
+      constraint?: string;
+    };
+
+    return (
+      driverError.code === '23505' &&
+      driverError.constraint === 'uq_wager_transactions_idempotency_key'
+    );
   }
 }

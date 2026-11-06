@@ -89,7 +89,7 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
     this._status = props.status as WagerTransactionStatus;
     this._referenceTransactionId = props?.referenceTransactionId;
     this._failureCode = props?.failureCode as FailureCode;
-    this._processedAt = props?.processedAt || new Date();
+    this._processedAt = props?.processedAt;
     this._resultBalance = props.resultBalance;
   }
 
@@ -101,6 +101,10 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
 
   get referenceTransactionId(): string | undefined {
     return this._referenceTransactionId;
+  }
+
+  setReferenceTransactionId(referenceTransactionId: string): void {
+    this._referenceTransactionId = referenceTransactionId;
   }
 
   get failureCode(): FailureCode | undefined {

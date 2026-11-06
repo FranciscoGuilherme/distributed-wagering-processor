@@ -1,4 +1,3 @@
-import { Inject, Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import OperationRejectedError from '../../domain/@shared/errors/operation-rejected.error';
 import WagerTransaction from '../../domain/entities/wager-transaction.entity';
@@ -6,9 +5,6 @@ import type WalletAggregate from '../../domain/entities/wallet.aggregate';
 import type OutboxMessageRepositoryInterface from '../../domain/repositories/outbox-message-repository.interface';
 import type WagerTransactionRepositoryInterface from '../../domain/repositories/wager-transaction-repository.interface';
 import type WalletRepositoryInterface from '../../domain/repositories/wallet-repository.interface';
-import { OUTBOX_MESSAGE_REPOSITORY } from '../../infra/repositories/typeorm/outbox-message.repository';
-import { WAGER_TRANSACTION_REPOSITORY } from '../../infra/repositories/typeorm/wager-transaction.repository';
-import { WALLET_REPOSITORY } from '../../infra/repositories/typeorm/wallet.repository';
 import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
 import {
   getFailureCode,
@@ -22,14 +18,10 @@ import type {
   ProcessOperationResult,
 } from './process-operation.usecase';
 
-@Injectable()
 export default class ProcessKindLossUseCase {
   constructor(
-    @Inject(WALLET_REPOSITORY)
     private readonly walletRepository: WalletRepositoryInterface,
-    @Inject(WAGER_TRANSACTION_REPOSITORY)
     private readonly wagerTransactionRepository: WagerTransactionRepositoryInterface,
-    @Inject(OUTBOX_MESSAGE_REPOSITORY)
     private readonly outboxMessageRepository: OutboxMessageRepositoryInterface,
   ) {}
 

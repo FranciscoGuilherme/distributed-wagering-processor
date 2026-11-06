@@ -1,4 +1,3 @@
-import { Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
 import Decimal from 'decimal.js';
 import { EntityManager } from 'typeorm';
@@ -16,8 +15,6 @@ import InboxMessageFactory from '../../domain/factories/inbox-message.factory';
 import WagerTransactionFactory from '../../domain/factories/wager-transaction.factory';
 import type InboxMessageRepositoryInterface from '../../domain/repositories/inbox-message-repository.interface';
 import type WagerTransactionRepositoryInterface from '../../domain/repositories/wager-transaction-repository.interface';
-import { INBOX_MESSAGE_REPOSITORY } from '../../infra/repositories/typeorm/inbox-message.repository';
-import { WAGER_TRANSACTION_REPOSITORY } from '../../infra/repositories/typeorm/wager-transaction.repository';
 import { UnitOfWork } from '../../infra/repositories/unit-of-work';
 import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
 import ProcessKindBetUseCase from './process-kind-bet.usecase';
@@ -57,13 +54,10 @@ export type ProcessOperationResult = {
 export type ProcessOperationOutcome =
   ProcessOperationResult | { duplicateMessage: true; idempotentReplay: true };
 
-@Injectable()
 export default class ProcessOperationUseCase {
   constructor(
     private readonly uow: UnitOfWork,
-    @Inject(WAGER_TRANSACTION_REPOSITORY)
     private readonly wagerTransactionRepository: WagerTransactionRepositoryInterface,
-    @Inject(INBOX_MESSAGE_REPOSITORY)
     private readonly inboxMessageRepository: InboxMessageRepositoryInterface,
     private readonly processKindBetUseCase: ProcessKindBetUseCase,
     private readonly processKindWinUseCase: ProcessKindWinUseCase,

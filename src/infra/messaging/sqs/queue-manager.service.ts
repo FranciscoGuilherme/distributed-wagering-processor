@@ -1,10 +1,9 @@
-import { Injectable } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import InvalidQueueMessageError from '../../domain/@shared/errors/invalid-queue-message.error';
-import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
-import { WagerOperationDto } from '../dtos/wager-operation.dto';
-import ProcessOperationUseCase from '../usecases/process-operation.usecase';
+import { WagerOperationDto } from '../../../application/dtos/wager-operation.dto';
+import ProcessOperationUseCase from '../../../application/usecases/process-operation.usecase';
+import InvalidQueueMessageError from '../../../domain/@shared/errors/invalid-queue-message.error';
+import { SYSTEM_MESSAGES } from '../../../shared/constants/system-messages';
 import { WAGER_TRANSACTION_CONSUMER_NAME } from './sqs.constants';
 
 type RecordValue = Record<string, unknown>;
@@ -13,7 +12,6 @@ function isRecord(value: unknown): value is RecordValue {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-@Injectable()
 export default class QueueManagerService {
   constructor(private readonly processOperation: ProcessOperationUseCase) {}
 

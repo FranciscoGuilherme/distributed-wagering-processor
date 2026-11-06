@@ -7,9 +7,9 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type OutboxMessageRepositoryInterface from '../../domain/repositories/outbox-message-repository.interface';
-import { OUTBOX_MESSAGE_REPOSITORY } from '../../infra/repositories/typeorm/outbox-message.repository';
-import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
+import type OutboxMessageRepositoryInterface from '../../../domain/repositories/outbox-message-repository.interface';
+import { SYSTEM_MESSAGES } from '../../../shared/constants/system-messages';
+import { OUTBOX_MESSAGE_REPOSITORY } from '../../repositories/typeorm/outbox-message.repository';
 import { SQS_CLIENT } from './sqs-client';
 
 @Injectable()

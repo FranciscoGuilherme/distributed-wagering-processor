@@ -9,12 +9,17 @@ import ProcessKindRefoundUseCase from './application/usecases/process-kind-refou
 import ProcessKindRollbackUseCase from './application/usecases/process-kind-rollback.usecase';
 import ProcessKindWinUseCase from './application/usecases/process-kind-win.usecase';
 import ProcessOperationUseCase from './application/usecases/process-operation.usecase';
-import OutboxPublisherWorker from './application/services/outbox-publisher.worker';
-import QueueManagerService from './application/services/queue-manager.service';
-import { SQS_CLIENT } from './application/services/sqs-client';
-import SqsConsumerWorker from './application/services/sqs-consumer.worker';
+import type InboxMessageRepositoryInterface from './domain/repositories/inbox-message-repository.interface';
+import type OutboxMessageRepositoryInterface from './domain/repositories/outbox-message-repository.interface';
+import type WagerTransactionRepositoryInterface from './domain/repositories/wager-transaction-repository.interface';
+import type WalletLedgerEntryInterface from './domain/repositories/wallet-ledger-entry.interface';
+import type WalletRepositoryInterface from './domain/repositories/wallet-repository.interface';
 import { WageringController } from './infra/controllers/wagering.controller';
 import { WalletsController } from './infra/controllers/wallets.controller';
+import OutboxPublisherWorker from './infra/messaging/sqs/outbox-publisher.worker';
+import QueueManagerService from './infra/messaging/sqs/queue-manager.service';
+import { SQS_CLIENT } from './infra/messaging/sqs/sqs-client';
+import SqsConsumerWorker from './infra/messaging/sqs/sqs-consumer.worker';
 import { InboxMessageModel } from './infra/models/inbox-message.model';
 import { OutboxMessageModel } from './infra/models/outbox-message.model';
 import { WagerTransactionModel } from './infra/models/wager-transaction.model';
@@ -41,16 +46,138 @@ import { UnitOfWork } from './infra/repositories/unit-of-work';
   controllers: [WageringController, WalletsController],
   providers: [
     UnitOfWork,
-    QueueManagerService,
     SqsConsumerWorker,
     OutboxPublisherWorker,
-    CreateWalletUseCase,
-    ProcessOperationUseCase,
-    ProcessKindBetUseCase,
-    ProcessKindWinUseCase,
-    ProcessKindLossUseCase,
-    ProcessKindRollbackUseCase,
-    ProcessKindRefoundUseCase,
+    {
+      provide: CreateWalletUseCase,
+      inject: [
+        UnitOfWork,
+        WALLET_REPOSITORY,
+        WAGER_TRANSACTION_REPOSITORY,
+        WALLET_LEDGER_ENTRY_REPOSITORY,
+        OUTBOX_MESSAGE_REPOSITORY,
+      ],
+      useFactory: (
+        uow: UnitOfWork,
+        wallets: WalletRepositoryInterface,
+        transactions: WagerTransactionRepositoryInterface,
+        ledger: WalletLedgerEntryInterface,
+        outbox: OutboxMessageRepositoryInterface,
+      ) => new CreateWalletUseCase(uow, wallets, transactions, ledger, outbox),
+    },
+    {
+      provide: ProcessKindBetUseCase,
+      inject: [
+        WALLET_REPOSITORY,
+        WALLET_LEDGER_ENTRY_REPOSITORY,
+        WAGER_TRANSACTION_REPOSITORY,
+        OUTBOX_MESSAGE_REPOSITORY,
+      ],
+      useFactory: (
+        wallets: WalletRepositoryInterface,
+        ledger: WalletLedgerEntryInterface,
+        transactions: WagerTransactionRepositoryInterface,
+        outbox: OutboxMessageRepositoryInterface,
+      ) => new ProcessKindBetUseCase(wallets, ledger, transactions, outbox),
+    },
+    {
+      provide: ProcessKindWinUseCase,
+      inject: [
+        WALLET_REPOSITORY,
+        WALLET_LEDGER_ENTRY_REPOSITORY,
+        WAGER_TRANSACTION_REPOSITORY,
+        OUTBOX_MESSAGE_REPOSITORY,
+      ],
+      useFactory: (
+        wallets: WalletRepositoryInterface,
+        ledger: WalletLedgerEntryInterface,
+        transactions: WagerTransactionRepositoryInterface,
+        outbox: OutboxMessageRepositoryInterface,
+      ) => new ProcessKindWinUseCase(wallets, ledger, transactions, outbox),
+    },
+    {
+      provide: ProcessKindLossUseCase,
+      inject: [
+        WALLET_REPOSITORY,
+        WAGER_TRANSACTION_REPOSITORY,
+        OUTBOX_MESSAGE_REPOSITORY,
+      ],
+      useFactory: (
+        wallets: WalletRepositoryInterface,
+        transactions: WagerTransactionRepositoryInterface,
+        outbox: OutboxMessageRepositoryInterface,
+      ) => new ProcessKindLossUseCase(wallets, transactions, outbox),
+    },
+    {
+      provide: ProcessKindRollbackUseCase,
+      inject: [
+        WALLET_REPOSITORY,
+        WALLET_LEDGER_ENTRY_REPOSITORY,
+        WAGER_TRANSACTION_REPOSITORY,
+        OUTBOX_MESSAGE_REPOSITORY,
+      ],
+      useFactory: (
+        wallets: WalletRepositoryInterface,
+        ledger: WalletLedgerEntryInterface,
+        transactions: WagerTransactionRepositoryInterface,
+        outbox: OutboxMessageRepositoryInterface,
+      ) =>
+        new ProcessKindRollbackUseCase(wallets, ledger, transactions, outbox),
+    },
+    {
+      provide: ProcessKindRefoundUseCase,
+      inject: [
+        WALLET_REPOSITORY,
+        WALLET_LEDGER_ENTRY_REPOSITORY,
+        WAGER_TRANSACTION_REPOSITORY,
+        OUTBOX_MESSAGE_REPOSITORY,
+      ],
+      useFactory: (
+        wallets: WalletRepositoryInterface,
+        ledger: WalletLedgerEntryInterface,
+        transactions: WagerTransactionRepositoryInterface,
+        outbox: OutboxMessageRepositoryInterface,
+      ) => new ProcessKindRefoundUseCase(wallets, ledger, transactions, outbox),
+    },
+    {
+      provide: ProcessOperationUseCase,
+      inject: [
+        UnitOfWork,
+        WAGER_TRANSACTION_REPOSITORY,
+        INBOX_MESSAGE_REPOSITORY,
+        ProcessKindBetUseCase,
+        ProcessKindWinUseCase,
+        ProcessKindLossUseCase,
+        ProcessKindRefoundUseCase,
+        ProcessKindRollbackUseCase,
+      ],
+      useFactory: (
+        uow: UnitOfWork,
+        transactions: WagerTransactionRepositoryInterface,
+        inbox: InboxMessageRepositoryInterface,
+        bet: ProcessKindBetUseCase,
+        win: ProcessKindWinUseCase,
+        loss: ProcessKindLossUseCase,
+        refund: ProcessKindRefoundUseCase,
+        rollback: ProcessKindRollbackUseCase,
+      ) =>
+        new ProcessOperationUseCase(
+          uow,
+          transactions,
+          inbox,
+          bet,
+          win,
+          loss,
+          refund,
+          rollback,
+        ),
+    },
+    {
+      provide: QueueManagerService,
+      inject: [ProcessOperationUseCase],
+      useFactory: (processOperation: ProcessOperationUseCase) =>
+        new QueueManagerService(processOperation),
+    },
     WagerTransactionRepository,
     InboxMessageRepository,
     OutboxMessageRepository,

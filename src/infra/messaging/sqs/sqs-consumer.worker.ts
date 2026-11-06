@@ -12,8 +12,8 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import InvalidQueueMessageError from '../../domain/@shared/errors/invalid-queue-message.error';
-import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
+import InvalidQueueMessageError from '../../../domain/@shared/errors/invalid-queue-message.error';
+import { SYSTEM_MESSAGES } from '../../../shared/constants/system-messages';
 import QueueManagerService from './queue-manager.service';
 import { SQS_CLIENT } from './sqs-client';
 

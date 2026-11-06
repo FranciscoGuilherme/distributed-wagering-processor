@@ -35,6 +35,14 @@ import WalletModel from './wallet.model';
   onDelete: 'RESTRICT',
 })
 @Index('ix_wager_transactions_wallet_id', ['walletId'])
+@Index(
+  'uq_wager_transactions_refund_reference',
+  ['referenceTransactionId'],
+  {
+    unique: true,
+    where: `"kind" = 'REFUND' AND "reference_transaction_id" IS NOT NULL`,
+  },
+)
 export class WagerTransactionModel extends BaseModel {
   @Column({ type: 'varchar', name: 'provider_id' })
   declare providerId: string;

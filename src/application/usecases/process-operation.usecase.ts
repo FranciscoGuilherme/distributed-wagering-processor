@@ -20,6 +20,7 @@ import { WAGER_TRANSACTION_REPOSITORY } from '../../infra/repositories/typeorm/w
 import { WALLET_LEDGER_ENTRY_REPOSITORY } from '../../infra/repositories/typeorm/wallet-ledger-entry.repository';
 import { WALLET_REPOSITORY } from '../../infra/repositories/typeorm/wallet.repository';
 import { UnitOfWork } from '../../infra/repositories/unit-of-work';
+import ProcessKindRefoundUseCase from './process-kind-refound.usecase';
 
 export type ProcessOperationProps = {
   idempotencyKey: string;
@@ -40,7 +41,7 @@ export type ProcessOperationProps = {
 export type ProcessOperationResult = {
   transactionId: string;
   status: WagerTransactionStatus;
-  balance: WagerTransactionBalance;
+  balance?: WagerTransactionBalance;
   idempotentReplay: boolean;
 };
 
@@ -54,6 +55,7 @@ export default class ProcessOperationUseCase {
     private readonly walletRepository: WalletRepositoryInterface,
     @Inject(WALLET_LEDGER_ENTRY_REPOSITORY)
     private readonly walletLedgerEntryRepository: WalletLedgerEntryInterface,
+    private readonly processKindRefoundUseCase: ProcessKindRefoundUseCase,
   ) {}
 
   async execute(props: ProcessOperationProps): Promise<ProcessOperationResult> {
@@ -89,17 +91,23 @@ export default class ProcessOperationUseCase {
           roundId: props.roundId,
           gameId: props.gameId,
           kind: props.kind,
+          referenceExternalTransactionId: props.referenceExternalTransactionId,
           money: props.money,
           status: WagerTransactionStatus.Pending,
         });
+
+        if (props.kind === WagerTransactionKind.Refund) {
+          return this.processKindRefoundUseCase.execute(
+            props,
+            manager,
+            wagerTransaction,
+          );
+        }
+
         await wagerTransactionRepository.create(wagerTransaction);
 
-        // TODO 02 — Para REFUND e ROLLBACK, receber
-        // referenceExternalTransactionId, localizar a transação por
-        // providerId + ID externo e consultar se ela já foi revertida pelo
-        // mesmo tipo. Se a referência não existir, persistir PENDING_REFERENCE
-        // e o evento de Outbox; não movimentar carteira nem ledger.
-        // Preencher reference e referenceAlreadyReversed com essas consultas.
+        // TODO 02 — Para ROLLBACK, localizar a referência por providerId + ID
+        // externo e consultar se ela já foi revertida por esse tipo.
         let reference: WagerTransaction | undefined;
         let referenceAlreadyReversed = false;
 
@@ -142,24 +150,6 @@ export default class ProcessOperationUseCase {
 
           case WagerTransactionKind.Loss:
             this.processKindLossUseCase(wallet);
-            break;
-
-          case WagerTransactionKind.Refund:
-            if (!reference) {
-              throw new Error(
-                'TODO: tratar referência ausente como PENDING_REFERENCE',
-              );
-            }
-
-            await this.processKindRefundUseCase(
-              money,
-              wallet,
-              wagerTransaction,
-              reference,
-              referenceAlreadyReversed,
-              walletRepository,
-              walletLedgerEntryRepository,
-            );
             break;
 
           case WagerTransactionKind.Rollback:
@@ -213,10 +203,6 @@ export default class ProcessOperationUseCase {
         };
       });
     } catch (error) {
-      // TODO 07 — Tratar especificamente a violação da constraint única de
-      // idempotencyKey. Depois do rollback, buscar a transação novamente e
-      // devolver replay ou conflito conforme o payloadHash. Propagar erros
-      // não relacionados à constraint, sem convertê-los em replay.
       const existing =
         await this.wagerTransactionRepository.findByIdempotencyKey(
           props.idempotencyKey,
@@ -238,7 +224,10 @@ export default class ProcessOperationUseCase {
       );
     }
 
-    if (!existing.resultBalance) {
+    if (
+      !existing.resultBalance &&
+      existing.status !== WagerTransactionStatus.PendingReference
+    ) {
       throw new Error(
         `A transação ${existing.id} não tem o saldo do resultado salvo`,
       );
@@ -257,6 +246,7 @@ export default class ProcessOperationUseCase {
       externalTransactionId: props.externalTransactionId,
       gameId: props.gameId,
       kind: props.kind,
+      referenceExternalTransactionId: props.referenceExternalTransactionId,
       money: {
         amount: props.money.amount,
         currency: props.money.currency,
@@ -327,39 +317,6 @@ export default class ProcessOperationUseCase {
     wallet: WalletAggregate,
   ): WagerTransactionBalance {
     return this.toBalanceSnapshot(wallet.balance);
-  }
-
-  private async processKindRefundUseCase(
-    money: Money,
-    wallet: WalletAggregate,
-    wagerTransaction: WagerTransaction,
-    reference: WagerTransaction,
-    referenceAlreadyReversed: boolean,
-    walletRepository: WalletRepositoryInterface,
-    walletLedgerEntryRepository: WalletLedgerEntryInterface,
-  ): Promise<WagerTransactionBalance> {
-    this.validateReversalReference(
-      wagerTransaction,
-      money,
-      wallet,
-      reference,
-      [WagerTransactionKind.Bet],
-      referenceAlreadyReversed,
-    );
-
-    const balanceBefore = wallet.balance;
-
-    wallet.credit(money);
-
-    return this.persistWalletEffect(
-      money,
-      wallet,
-      wagerTransaction,
-      balanceBefore,
-      LedgerDirection.Credit,
-      walletRepository,
-      walletLedgerEntryRepository,
-    );
   }
 
   private async processKindRollbackUseCase(

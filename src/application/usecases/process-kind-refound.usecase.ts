@@ -1,152 +1,213 @@
 import { Inject, Injectable } from '@nestjs/common';
 import Decimal from 'decimal.js';
-import { isNull, isUndefined } from 'lodash';
 import { EntityManager } from 'typeorm';
 import ReferenceTransactionIdMissing from '../../domain/@shared/errors/reference-transaction-id-missing.error';
 import RefoundNotAllowedError from '../../domain/@shared/errors/refound-not-allowed.error';
-import { WagerTransactionStatus } from '../../domain/entities/wager-transaction.entity';
-import WagerTransactionFactory from '../../domain/factories/wager-transaction.factory';
+import Money from '../../domain/@shared/value-objects/money.vo';
+import WagerTransaction, {
+  WagerTransactionStatus,
+} from '../../domain/entities/wager-transaction.entity';
+import { LedgerDirection } from '../../domain/entities/wallet-ledger-entry.entity';
+import OutboxMessageFactory from '../../domain/factories/outbox-message.factory';
+import WalletLedgerEntryFactory from '../../domain/factories/wallet-ledger-entry.factory';
+import type OutboxMessageRepositoryInterface from '../../domain/repositories/outbox-message-repository.interface';
 import type WagerTransactionRepositoryInterface from '../../domain/repositories/wager-transaction-repository.interface';
 import type WalletLedgerEntryInterface from '../../domain/repositories/wallet-ledger-entry.interface';
 import type WalletRepositoryInterface from '../../domain/repositories/wallet-repository.interface';
+import { OUTBOX_MESSAGE_REPOSITORY } from '../../infra/repositories/typeorm/outbox-message.repository';
 import { WAGER_TRANSACTION_REPOSITORY } from '../../infra/repositories/typeorm/wager-transaction.repository';
 import { WALLET_LEDGER_ENTRY_REPOSITORY } from '../../infra/repositories/typeorm/wallet-ledger-entry.repository';
 import { WALLET_REPOSITORY } from '../../infra/repositories/typeorm/wallet.repository';
-import { UnitOfWork } from '../../infra/repositories/unit-of-work';
-import { ProcessOperationProps } from './process-operation.usecase';
+import type {
+  ProcessOperationProps,
+  ProcessOperationResult,
+} from './process-operation.usecase';
 
 @Injectable()
 export default class ProcessKindRefoundUseCase {
   constructor(
-    private readonly uow: UnitOfWork,
     @Inject(WALLET_REPOSITORY)
     private readonly walletRepository: WalletRepositoryInterface,
     @Inject(WALLET_LEDGER_ENTRY_REPOSITORY)
     private readonly walletLedgerEntryRepository: WalletLedgerEntryInterface,
     @Inject(WAGER_TRANSACTION_REPOSITORY)
     private readonly wagerTransactionRepository: WagerTransactionRepositoryInterface,
+    @Inject(OUTBOX_MESSAGE_REPOSITORY)
+    private readonly outboxMessageRepository: OutboxMessageRepositoryInterface,
   ) {}
 
   async execute(
     props: ProcessOperationProps,
-    payloadHash: string,
-  ): Promise<void> {
-    await this.uow.execute(async (manager: EntityManager) => {
-      const walletRepository = this.walletRepository.withTransaction(manager);
-      const walletLedgerEntryRepository =
-        this.walletLedgerEntryRepository.withTransaction(manager);
-      const wagerTransactionRepository =
-        this.wagerTransactionRepository.withTransaction(manager);
+    manager: EntityManager,
+    wagerTransaction: WagerTransaction,
+  ): Promise<ProcessOperationResult> {
+    const walletRepository = this.walletRepository.withTransaction(manager);
+    const walletLedgerEntryRepository =
+      this.walletLedgerEntryRepository.withTransaction(manager);
+    const wagerTransactionRepository =
+      this.wagerTransactionRepository.withTransaction(manager);
+    const outboxMessageRepository =
+      this.outboxMessageRepository.withTransaction(manager);
 
-      // TODO REFUND-01 — Exigir referenceExternalTransactionId no payload.
-      // Ela identifica a transação do provedor a ser reembolsada.
-      if (
-        isNull(props.referenceExternalTransactionId) ||
-        isUndefined(props.referenceExternalTransactionId)
-      ) {
-        throw new ReferenceTransactionIdMissing(
-          'referenceExternalTransactionId not found',
-        );
-      }
+    if (!props.referenceExternalTransactionId) {
+      throw new ReferenceTransactionIdMissing(
+        'referenceExternalTransactionId not found',
+      );
+    }
 
-      // TODO REFUND-02 — Depois da verificação de idempotência, localizar a
-      // referência por providerId + referenceExternalTransactionId e bloqueá-la
-      // para escrita dentro da transação.
-      const wagerTransactionReference =
-        await wagerTransactionRepository.findByProviderAndExternalTransactionIdForUpdate(
-          props.providerId,
-          props.referenceExternalTransactionId,
-        );
+    await wagerTransactionRepository.create(wagerTransaction);
 
-      // TODO REFUND-03 — Se a referência ainda não existir, salvar esta operação
-      // como PENDING_REFERENCE, publicar o evento no Outbox e não alterar carteira
-      // nem criar ledger. Ela será reprocessada depois.
-      if (isNull(wagerTransactionReference)) {
-        const wagerTransaction = WagerTransactionFactory.create({
-          providerId: props.providerId,
-          externalTransactionId: props.externalTransactionId,
-          idempotencyKey: props.idempotencyKey,
-          payloadHash: payloadHash,
-          walletId: props.walletId,
-          playerId: props.playerId,
-          roundId: props.roundId,
-          gameId: props.gameId,
-          kind: props.kind,
-          money: {
-            amount: props.money.amount,
-            currency: props.money.currency,
+    const wagerTransactionReference =
+      await wagerTransactionRepository.findByProviderAndExternalTransactionIdForUpdate(
+        props.providerId,
+        props.referenceExternalTransactionId,
+      );
+
+    if (!wagerTransactionReference) {
+      wagerTransaction.markPendingReference();
+      await wagerTransactionRepository.create(wagerTransaction);
+      await outboxMessageRepository.create(
+        OutboxMessageFactory.create({
+          aggregateId: wagerTransaction.id,
+          eventType: 'WagerTransactionPendingReference',
+          payload: {
+            transactionId: wagerTransaction.id,
+            providerId: props.providerId,
+            externalTransactionId: props.externalTransactionId,
+            referenceExternalTransactionId:
+              props.referenceExternalTransactionId,
+            status: WagerTransactionStatus.PendingReference,
           },
-          referenceExternalTransactionId: props.externalTransactionId,
-          status: WagerTransactionStatus.PendingReference,
-          referenceTransactionId: props.referenceExternalTransactionId,
-        });
-        await wagerTransactionRepository.create(wagerTransaction);
+          occurredAt: wagerTransaction.createdAt,
+          attempts: 0,
+        }),
+      );
 
-        return {
-          transactionId: wagerTransaction.id,
-          status: wagerTransaction.status,
-          balance: wagerTransaction.resultBalance,
-          idempotentReplay: false,
-        };
-      }
+      return {
+        transactionId: wagerTransaction.id,
+        status: wagerTransaction.status,
+        idempotentReplay: false,
+      };
+    }
 
-      // TODO REFUND-04 — Confirmar que a referência está PROCESSED e que seu kind
-      // é BET. Qualquer outro kind ou status deve resultar em rejeição de negócio.
-      if (!wagerTransactionReference.isAllowedToRefound()) {
-        throw new RefoundNotAllowedError('REFOUND not allowed');
-      }
+    if (!wagerTransactionReference.isAllowedToRefound()) {
+      throw new RefoundNotAllowedError('Only a processed BET can be refunded');
+    }
 
-      // TODO REFUND-05 — Confirmar que referência e refund pertencem ao mesmo
-      // provider, player, wallet, moeda e round.
-      if (
-        wagerTransactionReference.providerId !== props.providerId ||
-        wagerTransactionReference.playerId !== props.playerId ||
-        wagerTransactionReference.walletId !== props.walletId ||
-        wagerTransactionReference.roundId !== props.roundId
-      ) {
-        throw new RefoundNotAllowedError('REFOUND not allowed');
-      }
+    if (
+      wagerTransactionReference.providerId !== wagerTransaction.providerId ||
+      wagerTransactionReference.playerId !== wagerTransaction.playerId ||
+      wagerTransactionReference.walletId !== wagerTransaction.walletId ||
+      wagerTransactionReference.roundId !== wagerTransaction.roundId ||
+      wagerTransactionReference.money.value.currency !==
+        wagerTransaction.money.value.currency ||
+      !wagerTransactionReference.money.value.amount.equals(
+        wagerTransaction.money.value.amount,
+      )
+    ) {
+      throw new RefoundNotAllowedError(
+        'The refund must match the referenced BET context and amount',
+      );
+    }
 
-      // TODO REFUND-06 — Confirmar que o valor do refund é exatamente igual ao da
-      // BET referenciada. Reembolso parcial está fora do escopo.
-      if (
-        wagerTransactionReference.money.value.amount.equals(
-          new Decimal(props.money.amount),
-        )
-      ) {
-        throw new RefoundNotAllowedError(
-          'Amount of the referente transaction is not equal to current value',
-        );
-      }
+    const existingRefund =
+      await wagerTransactionRepository.findRefundByReferenceTransactionId(
+        wagerTransactionReference.id,
+      );
+    if (existingRefund) {
+      throw new RefoundNotAllowedError(
+        'The referenced BET has already been refunded',
+      );
+    }
 
-      // TODO REFUND-07 — Confirmar que a BET ainda não foi reembolsada.
-      // Proteger também essa regra no banco com unicidade para
-      // (reference_transaction_id, kind) nos casos REFUND e ROLLBACK.
+    const wallet = await walletRepository.findByIdForUpdate(
+      wagerTransaction.walletId,
+    );
+    if (!wallet) {
+      throw new Error(`Wallet not found: ${wagerTransaction.walletId}`);
+    }
+    if (
+      wallet.playerId !== wagerTransaction.playerId ||
+      wallet.currency !== wagerTransaction.money.value.currency ||
+      wallet.balance.value.currency !== wagerTransaction.money.value.currency
+    ) {
+      throw new RefoundNotAllowedError(
+        'The wallet owner or currency does not match the refund',
+      );
+    }
 
-      // TODO REFUND-08 — Bloquear a linha da carteira e validar novamente que ela
-      // pertence ao player e usa a moeda do refund.
-
-      // TODO REFUND-09 — Creditar o valor do refund. Guardar o saldo antes e depois.
-
-      // TODO REFUND-10 — Criar exatamente um ledger CREDIT, ligado à carteira,
-      // à transação REFUND e à transação interna referenciada.
-
-      // TODO REFUND-11 — Marcar o refund como PROCESSED, guardar referenceTransactionId
-      // interno, processedAt e o resultBalance original para futuros replays.
-
-      // TODO REFUND-12 — Persistir a transação, carteira, ledger e eventos de Outbox
-      // na mesma transação SQL. WalletBalanceChanged só é emitido se o saldo mudou.
-
-      // TODO REFUND-13 — Se a entrada for SQS, gravar o Inbox por
-      // (consumerName, messageId) na mesma transação. Entrada HTTP não usa Inbox.
-
-      // TODO REFUND-14 — Tratar rejeições de negócio com failureCode estável e
-      // persistir REJECTED sem ledger. Falhas de infraestrutura devem provocar
-      // rollback.
-
-      // TODO REFUND-15 — Se houver corrida ao criar outro refund da mesma referência,
-      // reconhecer a violação da constraint única e devolver conflito/replay
-      // conforme idempotencyKey e payloadHash.
+    const money = new Money({
+      amount: new Decimal(props.money.amount),
+      currency: props.money.currency,
     });
+    const balanceBefore = wallet.balance;
+    wallet.credit(money);
+    const balanceAfter = {
+      amount: wallet.balance.value.amount.toFixed(2),
+      currency: wallet.balance.value.currency,
+    };
+
+    wagerTransaction.setReferenceTransactionId(wagerTransactionReference.id);
+    await wagerTransactionRepository.create(wagerTransaction);
+    await walletRepository.create(wallet);
+    await walletLedgerEntryRepository.create(
+      WalletLedgerEntryFactory.create({
+        walletId: wallet.id,
+        transactionId: wagerTransaction.id,
+        direction: LedgerDirection.Credit,
+        money: {
+          amount: money.value.amount.toFixed(2),
+          currency: money.value.currency,
+        },
+        balanceBefore: {
+          amount: balanceBefore.value.amount.toFixed(2),
+          currency: balanceBefore.value.currency,
+        },
+        balanceAfter,
+        createdAt: wagerTransaction.createdAt,
+      }),
+    );
+
+    wagerTransaction.markProcessed(balanceAfter);
+    await wagerTransactionRepository.create(wagerTransaction);
+    await outboxMessageRepository.create(
+      OutboxMessageFactory.create({
+        aggregateId: wagerTransaction.id,
+        eventType: 'WagerTransactionProcessed',
+        payload: {
+          transactionId: wagerTransaction.id,
+          kind: wagerTransaction.kind,
+          referenceTransactionId: wagerTransactionReference.id,
+          status: wagerTransaction.status,
+          resultBalance: balanceAfter,
+        },
+        occurredAt: wagerTransaction.createdAt,
+        attempts: 0,
+      }),
+    );
+    await outboxMessageRepository.create(
+      OutboxMessageFactory.create({
+        aggregateId: wallet.id,
+        eventType: 'WalletBalanceChanged',
+        payload: {
+          walletId: wallet.id,
+          transactionId: wagerTransaction.id,
+          balanceBefore: {
+            amount: balanceBefore.value.amount.toFixed(2),
+            currency: balanceBefore.value.currency,
+          },
+          balanceAfter,
+        },
+        occurredAt: wagerTransaction.createdAt,
+        attempts: 0,
+      }),
+    );
+
+    return {
+      transactionId: wagerTransaction.id,
+      status: wagerTransaction.status,
+      balance: balanceAfter,
+      idempotentReplay: false,
+    };
   }
 }

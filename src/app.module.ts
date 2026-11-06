@@ -23,11 +23,13 @@ import WalletRepository, {
   WALLET_REPOSITORY,
 } from './infra/repositories/typeorm/wallet.repository';
 import { UnitOfWork } from './infra/repositories/unit-of-work';
+import ProcessKindRefoundUseCase from './application/usecases/process-kind-refound.usecase';
 
 @Module({
   providers: [
     UnitOfWork,
     ProcessBet,
+    ProcessKindRefoundUseCase,
     WagerTransactionRepository,
     InboxMessageRepository,
     OutboxMessageRepository,

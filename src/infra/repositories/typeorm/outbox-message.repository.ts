@@ -43,15 +43,19 @@ export default class OutboxMessageRepository implements OutboxMessageRepositoryI
            ORDER BY occurred_at, id
            LIMIT $1
            FOR UPDATE SKIP LOCKED
-         )
-         UPDATE outbox_messages AS outbox
-         SET claim_token = $2,
+         ),
+         claimed AS (
+           UPDATE outbox_messages AS outbox
+           SET claim_token = $2,
              claimed_until = NOW() + ($3::int * INTERVAL '1 millisecond')
-         FROM candidates
-         WHERE outbox.id = candidates.id
-         RETURNING outbox.id, outbox.aggregate_id AS "aggregateId",
+           FROM candidates
+           WHERE outbox.id = candidates.id
+           RETURNING outbox.id, outbox.aggregate_id AS "aggregateId",
                    outbox.event_type AS "eventType", outbox.payload,
-                   outbox.occurred_at AS "occurredAt", outbox.attempts`,
+                   outbox.occurred_at AS "occurredAt", outbox.attempts
+         )
+         SELECT id, "aggregateId", "eventType", payload, "occurredAt", attempts
+         FROM claimed`,
         [limit, claimToken, leaseMs],
       )) as Array<Omit<ClaimedOutboxEvent, 'claimToken'>>;
 

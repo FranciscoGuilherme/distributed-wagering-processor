@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import { isUndefined } from 'lodash';
 import { EntityManager } from 'typeorm';
 import IdempotencyConflictError from '../../domain/@shared/errors/idempotency-conflict.error';
+import IdempotencyKeyAlreadyExistsError from '../../domain/@shared/errors/idempotency-key-already-exists.error';
 import WagerTransaction, {
   WagerTransactionKind,
   WagerTransactionStatus,
@@ -99,6 +100,10 @@ export default class ProcessOperationUseCase {
         return result;
       });
     } catch (error) {
+      if (!(error instanceof IdempotencyKeyAlreadyExistsError)) {
+        throw error;
+      }
+
       const existing =
         await this.wagerTransactionRepository.findByIdempotencyKey(
           props.idempotencyKey,

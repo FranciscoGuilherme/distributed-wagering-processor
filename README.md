@@ -21,9 +21,128 @@
   <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
   [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
 
-## Description
+## Distributed Wagering Processor
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Implementação NestJS/TypeORM do desafio Jungle Gaming. As operações financeiras
+usam PostgreSQL; mensagens de entrada e eventos da Outbox usam filas SQS FIFO.
+
+### Subir localmente
+
+```bash
+cp .env.sample .env
+docker compose up -d postgres localstack
+docker compose run --rm app bun run migration:run
+docker compose up -d app
+```
+
+O Compose cria `wager-transactions.fifo`, sua DLQ
+`wager-transactions-dlq.fifo` (redrive padrão após 5 entregas) e
+`wagering-events.fifo`. Para migrar novamente, execute
+`docker compose exec app bun run migration:run`.
+
+### Criar wallet e apostar por HTTP
+
+```bash
+curl -sS http://localhost:3000/wallets \
+  -H 'content-type: application/json' \
+  -d '{
+    "playerId": "0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
+    "initialBalance": { "amount": "100.00", "currency": "BRL" }
+  }'
+```
+
+Use o `id` retornado como `walletId`:
+
+```bash
+curl -i http://localhost:3000/wagering/transactions \
+  -H 'content-type: application/json' \
+  -H 'Idempotency-Key: provider-a:transaction-123' \
+  -d '{
+    "providerId": "provider-a",
+    "externalTransactionId": "transaction-123",
+    "playerId": "0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
+    "walletId": "<wallet-id-retornado>",
+    "roundId": "round-987",
+    "gameId": "fortune-chimp",
+    "kind": "BET",
+    "money": { "amount": "25.00", "currency": "BRL" }
+  }'
+```
+
+Uma resposta processada contém `transactionId`, `status`, o saldo original
+resultante e `idempotentReplay`. Reenvie o mesmo body e header para receber o
+resultado salvo. Altere um campo de negócio mantendo o header para observar
+`409 IDEMPOTENCY_CONFLICT`; use uma aposta acima do saldo para obter `422` com
+`failureCode` (BN-001). Valor monetário é string decimal positiva, até duas
+casas; representações como `"25"`, `"25.0"` e `"25.00"` têm hash canônico igual.
+
+### Enviar uma aposta por SQS
+
+Envie um envelope à fila de entrada. `messageId` e `consumerName` fazem parte
+do contrato persistente de Inbox; reutilize os mesmos valores ao redeliver a
+mesma mensagem.
+
+```bash
+docker compose exec localstack awslocal sqs send-message \
+  --queue-url http://localhost:4566/000000000000/wager-transactions.fifo \
+  --message-group-id "<wallet-id>" \
+  --message-deduplication-id "message-bet-001" \
+  --message-body '{
+    "messageId":"message-bet-001",
+    "consumerName":"wager-transaction-consumer",
+    "type":"WagerTransactionRequested",
+    "occurredAt":"2026-11-06T12:00:00.000Z",
+    "data":{
+      "providerId":"provider-a",
+      "externalTransactionId":"transaction-sqs-001",
+      "idempotencyKey":"provider-a:transaction-sqs-001",
+      "playerId":"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
+      "walletId":"<wallet-id-retornado>",
+      "roundId":"round-988",
+      "gameId":"fortune-chimp",
+      "kind":"BET",
+      "money":{"amount":"10.00","currency":"BRL"}
+    }
+  }'
+```
+
+Para exercitar redelivery lógica, envie novamente o mesmo envelope e mantenha
+`messageId`/`consumerName`; use outro `--message-deduplication-id` para que o
+FIFO local aceite a segunda entrega. A Inbox reconhece a repetição. Também é
+possível consultar `wagering-events.fifo` para ver eventos publicados depois
+do commit financeiro.
+
+### Garantias implementadas e limites
+
+- `ProcessOperationUseCase` abre uma transação SQL, consulta Inbox primeiro,
+  aplica idempotência, despacha o kind e grava Inbox antes do commit. O endpoint
+  HTTP não fornece metadados Inbox.
+- `BET` usa lock pessimista na wallet, `Money`/`Decimal`, ledger DEBIT e eventos
+  Outbox na mesma unidade de trabalho. Rejeição por saldo insuficiente tem
+  código BN-001 e não cria ledger.
+- Códigos de rejeição estáveis: BN-001 (saldo insuficiente), BN-002 (contexto ou
+  moeda inválidos), BN-003 (REFUND não permitido) e BN-004 (saldo insuficiente
+  ao reverter).
+- O consumidor só exclui a mensagem depois do retorno do use case; erros deixam
+  a mensagem para retry/redrive.
+- O publisher reivindica eventos com `FOR UPDATE SKIP LOCKED` e lease confirmado
+  antes da chamada SQS. Publica JSON `{eventId,eventType,aggregateId,occurredAt,
+  version,data}`, marca `publishedAt` após o envio e agenda retry exponencial.
+  Uma queda entre envio e marcação pode causar duplicata (at-least-once).
+- `OPENING` e o crédito de abertura são gravados junto com a wallet quando o
+  saldo inicial é maior que zero; saldo zero cria a wallet sem movimento.
+- Autenticação, endpoints de consulta/reconciliação e reprocessamento agendado
+  de `PENDING_REFERENCE` não fazem parte deste fluxo demonstrável.
+
+O hash SHA-256 usa as propriedades de negócio em ordem lexical fixa no
+`ProcessOperationUseCase`; `Idempotency-Key` e metadados de transporte não
+entram no hash. Consulte [.env.sample](./.env.sample) para os parâmetros locais.
+
+## Project setup
+
+```bash
+bun install
+```
 
 ## Project setup
 

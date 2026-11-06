@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: build
     command: bun run start:dev
     ports:
       - '3000:3000'
@@ -13,11 +14,32 @@ services:
       DB_USER: ${DB_USER:-postgres}
       DB_PASS: ${DB_PASS:-postgres}
       DB_NAME: ${DB_NAME:-distributed_wagering}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      SQS_ENDPOINT: ${SQS_ENDPOINT:-http://localstack:4566}
+      SQS_OPERATION_QUEUE_NAME: ${SQS_OPERATION_QUEUE_NAME:-wager-transactions.fifo}
+      SQS_DLQ_QUEUE_NAME: ${SQS_DLQ_QUEUE_NAME:-wager-transactions-dlq.fifo}
+      SQS_OUTBOX_QUEUE_NAME: ${SQS_OUTBOX_QUEUE_NAME:-wagering-events.fifo}
+      SQS_OPERATION_QUEUE_URL: ${SQS_OPERATION_QUEUE_URL:-http://localstack:4566/000000000000/wager-transactions.fifo}
+      SQS_OUTBOX_QUEUE_URL: ${SQS_OUTBOX_QUEUE_URL:-http://localstack:4566/000000000000/wagering-events.fifo}
+      SQS_CONSUMER_ENABLED: ${SQS_CONSUMER_ENABLED:-true}
+      OUTBOX_PUBLISHER_ENABLED: ${OUTBOX_PUBLISHER_ENABLED:-true}
+      SQS_LONG_POLL_SECONDS: ${SQS_LONG_POLL_SECONDS:-20}
+      SQS_VISIBILITY_TIMEOUT_SECONDS: ${SQS_VISIBILITY_TIMEOUT_SECONDS:-60}
+      SQS_MAX_RECEIVE_COUNT: ${SQS_MAX_RECEIVE_COUNT:-5}
+      SQS_OPERATION_QUEUE_NAME: ${SQS_OPERATION_QUEUE_NAME:-wager-transactions.fifo}
+      SQS_DLQ_QUEUE_NAME: ${SQS_DLQ_QUEUE_NAME:-wager-transactions-dlq.fifo}
+      SQS_OUTBOX_QUEUE_NAME: ${SQS_OUTBOX_QUEUE_NAME:-wagering-events.fifo}
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-10}
+      OUTBOX_CLAIM_LEASE_MS: ${OUTBOX_CLAIM_LEASE_MS:-60000}
     volumes:
       - .:/app
       - app_node_modules:/app/node_modules
     depends_on:
       postgres:
+        condition: service_healthy
+      localstack:
         condition: service_healthy
 
   postgres:
@@ -40,6 +62,26 @@ services:
       timeout: 5s
       retries: 10
 
+  localstack:
+    image: localstack/localstack:4
+    environment:
+      SERVICES: sqs
+      PERSISTENCE: '1'
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      SQS_MAX_RECEIVE_COUNT: ${SQS_MAX_RECEIVE_COUNT:-5}
+      SQS_VISIBILITY_TIMEOUT_SECONDS: ${SQS_VISIBILITY_TIMEOUT_SECONDS:-60}
+    ports:
+      - '4566:4566'
+    volumes:
+      - ./docker/localstack/init-sqs.sh:/etc/localstack/init/ready.d/init-sqs.sh:ro
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: ['CMD-SHELL', 'awslocal sqs list-queues >/dev/null 2>&1']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
 volumes:
   app_node_modules:
   postgres_data:
+  localstack_data:

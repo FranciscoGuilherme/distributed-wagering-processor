@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, QueryFailedError, Repository } from 'typeorm';
+import WalletAlreadyExistsError from '../../../domain/@shared/errors/wallet-already-exists.error';
 import WalletAggregate from '../../../domain/entities/wallet.aggregate';
 import WalletRepositoryInterface from '../../../domain/repositories/wallet-repository.interface';
 import WalletMapper from '../../mappers/wallet.mapper';
@@ -32,7 +33,45 @@ export default class WalletRepository implements WalletRepositoryInterface {
     return model ? WalletMapper.toEntity(model) : null;
   }
 
+  async findByPlayerAndCurrency(
+    playerId: string,
+    currency: string,
+  ): Promise<WalletAggregate | null> {
+    const model = await this.repository.findOneBy({ playerId, currency });
+    return model ? WalletMapper.toEntity(model) : null;
+  }
+
   async create(wallet: WalletAggregate): Promise<void> {
     await this.repository.save(WalletMapper.toPersistence(wallet));
+  }
+
+  async createNew(wallet: WalletAggregate): Promise<void> {
+    try {
+      await this.repository.insert(WalletMapper.toPersistence(wallet));
+    } catch (error) {
+      if (!this.isWalletUniqueViolation(error)) {
+        throw error;
+      }
+
+      throw new WalletAlreadyExistsError(
+        'A wallet for this player and currency already exists',
+      );
+    }
+  }
+
+  private isWalletUniqueViolation(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+
+    const driverError = error.driverError as {
+      code?: string;
+      constraint?: string;
+    };
+
+    return (
+      driverError.code === '23505' &&
+      driverError.constraint === 'uq_wallets_player_currency'
+    );
   }
 }

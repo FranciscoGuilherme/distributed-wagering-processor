@@ -1,11 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
-import WagerTransaction from '../../../domain/entities/wager-transaction.entity';
+import WagerTransaction, {
+  WagerTransactionKind,
+} from '../../../domain/entities/wager-transaction.entity';
 import WagerTransactionRepositoryInterface from '../../../domain/repositories/wager-transaction-repository.interface';
 import WagerTransactionMapper from '../../mappers/wager-transaction.mapper';
 import { WagerTransactionModel } from '../../models/wager-transaction.model';
-import { WagerTransactionKind } from '../../../domain/entities/wager-transaction.entity';
 
 export const WAGER_TRANSACTION_REPOSITORY = Symbol(
   'WAGER_TRANSACTION_REPOSITORY',
@@ -58,6 +59,16 @@ export default class WagerTransactionRepository implements WagerTransactionRepos
     const model = await this.repository.findOneBy({
       referenceTransactionId,
       kind: WagerTransactionKind.Refund,
+    });
+    return model ? WagerTransactionMapper.toEntity(model) : null;
+  }
+
+  async findRollbackByReferenceTransactionId(
+    referenceTransactionId: string,
+  ): Promise<WagerTransaction | null> {
+    const model = await this.repository.findOneBy({
+      referenceTransactionId,
+      kind: WagerTransactionKind.Rollback,
     });
     return model ? WagerTransactionMapper.toEntity(model) : null;
   }

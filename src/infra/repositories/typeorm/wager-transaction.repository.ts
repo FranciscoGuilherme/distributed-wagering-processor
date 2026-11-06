@@ -35,7 +35,19 @@ export default class WagerTransactionRepository implements WagerTransactionRepos
   async findByIdempotencyKey(
     idempotencyKey: string,
   ): Promise<WagerTransaction | null> {
-    const model = await this.repository.findOneBy({ idempotencyKey });
+    const model = await this.repository.findOne({ where: { idempotencyKey } });
+    return model ? WagerTransactionMapper.toEntity(model) : null;
+  }
+
+  async findByProviderAndExternalTransactionIdForUpdate(
+    providerId: string,
+    externalTransactionId: string,
+  ): Promise<WagerTransaction | null> {
+    const model = await this.repository.findOne({
+      where: { providerId, externalTransactionId },
+      lock: { mode: 'pessimistic_write' },
+    });
+
     return model ? WagerTransactionMapper.toEntity(model) : null;
   }
 }

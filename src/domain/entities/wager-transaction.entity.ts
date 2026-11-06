@@ -89,7 +89,7 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
     this._status = props.status as WagerTransactionStatus;
     this._referenceTransactionId = props?.referenceTransactionId;
     this._failureCode = props?.failureCode as FailureCode;
-    this._processedAt = props?.processedAt;
+    this._processedAt = props?.processedAt || new Date();
     this._resultBalance = props.resultBalance;
   }
 
@@ -132,6 +132,16 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
     this.assertNotTerminal();
     this._status = WagerTransactionStatus.Rejected;
     this._processedAt = new Date();
+  }
+
+  isAllowedToRefound(): boolean {
+    if (
+      this.kind !== WagerTransactionKind.Bet ||
+      this.status !== WagerTransactionStatus.Processed
+    ) {
+      return false;
+    }
+    return true;
   }
 
   private assertNotTerminal(): void {

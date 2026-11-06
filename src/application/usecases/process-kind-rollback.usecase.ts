@@ -204,7 +204,7 @@ export default class ProcessKindRollbackUseCase {
 
       return markRejected(
         transaction,
-        getFailureCode(error),
+        getFailureCode(error, 'BN-004'),
         wallet ? toBalanceSnapshot(wallet.balance) : undefined,
         wagerTransactionRepository,
         outboxRepository,

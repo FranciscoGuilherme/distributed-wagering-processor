@@ -100,12 +100,13 @@ export async function markProcessed(
     status: transaction.status,
     balance,
     idempotentReplay: false,
+    failureCode: transaction.failureCode,
   };
 }
 
 export async function markRejected(
   transaction: WagerTransaction,
-  failureCode: FailureCode | undefined,
+  failureCode: FailureCode,
   balance: WagerTransactionBalance | undefined,
   transactionRepository: WagerTransactionRepositoryInterface,
   outboxRepository: OutboxMessageRepositoryInterface,
@@ -131,6 +132,7 @@ export async function markRejected(
     status: transaction.status,
     balance,
     idempotentReplay: false,
+    failureCode: transaction.failureCode,
   };
 }
 
@@ -143,8 +145,18 @@ export function isBusinessRuleError(error: unknown): boolean {
   );
 }
 
-export function getFailureCode(error: unknown): FailureCode | undefined {
-  return error instanceof OperationRejectedError
-    ? error.failureCode
-    : undefined;
+export function getFailureCode(
+  error: unknown,
+  insufficientBalanceCode: FailureCode = 'BN-001',
+): FailureCode {
+  if (error instanceof OperationRejectedError) {
+    return error.failureCode ?? 'BN-002';
+  }
+  if (error instanceof BalanceError) {
+    return insufficientBalanceCode;
+  }
+  if (error instanceof RefoundNotAllowedError) {
+    return 'BN-003';
+  }
+  return 'BN-002';
 }

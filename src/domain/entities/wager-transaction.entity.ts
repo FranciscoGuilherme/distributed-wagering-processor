@@ -25,7 +25,7 @@ export type WagerTransactionBalance = {
   currency: string;
 };
 
-export type FailureCode = 'BN-001' | 'BN-002' | 'BN-003';
+export type FailureCode = 'BN-001' | 'BN-002' | 'BN-003' | 'BN-004';
 
 export type WagerTransactionProps = {
   providerId: string;
@@ -133,7 +133,7 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
   }
 
   reject(
-    failureCode?: FailureCode,
+    failureCode: FailureCode,
     resultBalance?: WagerTransactionBalance,
   ): void {
     this.assertNotTerminal();

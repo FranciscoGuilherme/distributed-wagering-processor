@@ -21,13 +21,10 @@ export default class ProcessKindLossUseCase {
     scope: TransactionScope,
     transaction: WagerTransaction,
   ): Promise<ProcessOperationResult> {
-    const walletRepository = scope.walletRepository;
-    const transactionRepository = scope.wagerTransactionRepository;
-    const outboxRepository = scope.outboxMessageRepository;
     let wallet: WalletAggregate | null = null;
 
     try {
-      wallet = await walletRepository.findById(transaction.walletId);
+      wallet = await scope.walletRepository.findById(transaction.walletId);
       if (!wallet) {
         throw new OperationRejectedError(
           SYSTEM_MESSAGES.APPLICATION.WALLET_NOT_FOUND,
@@ -45,8 +42,8 @@ export default class ProcessKindLossUseCase {
       return markProcessed(
         transaction,
         toBalanceSnapshot(wallet.balance),
-        transactionRepository,
-        outboxRepository,
+        scope.wagerTransactionRepository,
+        scope.outboxMessageRepository,
       );
     } catch (error) {
       if (!isBusinessRuleError(error)) {
@@ -56,8 +53,8 @@ export default class ProcessKindLossUseCase {
         transaction,
         getFailureCode(error),
         wallet ? toBalanceSnapshot(wallet.balance) : undefined,
-        transactionRepository,
-        outboxRepository,
+        scope.wagerTransactionRepository,
+        scope.outboxMessageRepository,
       );
     }
   }

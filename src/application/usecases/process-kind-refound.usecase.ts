@@ -30,11 +30,6 @@ export default class ProcessKindRefoundUseCase {
     scope: TransactionScope,
     transaction: WagerTransaction,
   ): Promise<ProcessOperationResult> {
-    const walletRepository = scope.walletRepository;
-    const ledgerRepository = scope.walletLedgerEntryRepository;
-    const transactionRepository = scope.wagerTransactionRepository;
-    const outboxRepository = scope.outboxMessageRepository;
-
     if (!props.referenceExternalTransactionId) {
       throw new ReferenceTransactionIdMissing(
         SYSTEM_MESSAGES.APPLICATION.REFERENCE_TRANSACTION_ID_REQUIRED,
@@ -42,14 +37,14 @@ export default class ProcessKindRefoundUseCase {
     }
 
     const reference =
-      await transactionRepository.findByProviderAndExternalTransactionIdForUpdate(
+      await scope.wagerTransactionRepository.findByProviderAndExternalTransactionIdForUpdate(
         transaction.providerId,
         props.referenceExternalTransactionId,
       );
     if (!reference) {
       transaction.markPendingReference();
-      await transactionRepository.create(transaction);
-      await outboxRepository.create(
+      await scope.wagerTransactionRepository.create(transaction);
+      await scope.outboxMessageRepository.create(
         OutboxMessageFactory.create({
           aggregateId: transaction.id,
           eventType: 'WagerTransactionPendingReference',
@@ -74,7 +69,9 @@ export default class ProcessKindRefoundUseCase {
 
     let wallet: WalletAggregate | null = null;
     try {
-      wallet = await walletRepository.findByIdForUpdate(transaction.walletId);
+      wallet = await scope.walletRepository.findByIdForUpdate(
+        transaction.walletId,
+      );
       if (!wallet) {
         throw new OperationRejectedError(
           SYSTEM_MESSAGES.APPLICATION.WALLET_NOT_FOUND,
@@ -107,7 +104,7 @@ export default class ProcessKindRefoundUseCase {
         );
       }
       const existingRefund =
-        await transactionRepository.findRefundByReferenceTransactionId(
+        await scope.wagerTransactionRepository.findRefundByReferenceTransactionId(
           reference.id,
         );
       if (existingRefund) {
@@ -129,14 +126,14 @@ export default class ProcessKindRefoundUseCase {
         transaction,
         balanceBefore,
         LedgerDirection.Credit,
-        walletRepository,
-        ledgerRepository,
+        scope.walletRepository,
+        scope.walletLedgerEntryRepository,
       );
       return markProcessed(
         transaction,
         balance,
-        transactionRepository,
-        outboxRepository,
+        scope.wagerTransactionRepository,
+        scope.outboxMessageRepository,
         {
           id: wallet.id,
           balanceBefore: toBalanceSnapshot(balanceBefore),
@@ -150,8 +147,8 @@ export default class ProcessKindRefoundUseCase {
         transaction,
         getFailureCode(error),
         wallet ? toBalanceSnapshot(wallet.balance) : undefined,
-        transactionRepository,
-        outboxRepository,
+        scope.wagerTransactionRepository,
+        scope.outboxMessageRepository,
       );
     }
   }

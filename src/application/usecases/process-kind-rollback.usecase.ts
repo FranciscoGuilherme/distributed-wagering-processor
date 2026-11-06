@@ -31,11 +31,6 @@ export default class ProcessKindRollbackUseCase {
     scope: TransactionScope,
     transaction: WagerTransaction,
   ): Promise<ProcessOperationResult> {
-    const walletRepository = scope.walletRepository;
-    const ledgerRepository = scope.walletLedgerEntryRepository;
-    const wagerTransactionRepository = scope.wagerTransactionRepository;
-    const outboxRepository = scope.outboxMessageRepository;
-
     if (!props.referenceExternalTransactionId) {
       throw new ReferenceTransactionIdMissing(
         SYSTEM_MESSAGES.APPLICATION.REFERENCE_TRANSACTION_ID_REQUIRED,
@@ -43,15 +38,15 @@ export default class ProcessKindRollbackUseCase {
     }
 
     const wagerTransactionReference =
-      await wagerTransactionRepository.findByProviderAndExternalTransactionIdForUpdate(
+      await scope.wagerTransactionRepository.findByProviderAndExternalTransactionIdForUpdate(
         transaction.providerId,
         props.referenceExternalTransactionId,
       );
 
     if (!wagerTransactionReference) {
       transaction.markPendingReference();
-      await wagerTransactionRepository.create(transaction);
-      await outboxRepository.create(
+      await scope.wagerTransactionRepository.create(transaction);
+      await scope.outboxMessageRepository.create(
         OutboxMessageFactory.create({
           aggregateId: transaction.id,
           eventType: 'WagerTransactionPendingReference',
@@ -76,14 +71,16 @@ export default class ProcessKindRollbackUseCase {
 
     let wallet: WalletAggregate | null = null;
     try {
-      wallet = await walletRepository.findByIdForUpdate(transaction.walletId);
+      wallet = await scope.walletRepository.findByIdForUpdate(
+        transaction.walletId,
+      );
       if (!wallet) {
         throw new OperationRejectedError(
           SYSTEM_MESSAGES.APPLICATION.WALLET_NOT_FOUND,
         );
       }
       const alreadyReversed =
-        await wagerTransactionRepository.findRollbackByReferenceTransactionId(
+        await scope.wagerTransactionRepository.findRollbackByReferenceTransactionId(
           wagerTransactionReference.id,
         );
       if (alreadyReversed) {
@@ -163,15 +160,15 @@ export default class ProcessKindRollbackUseCase {
         transaction,
         balanceBefore,
         direction,
-        walletRepository,
-        ledgerRepository,
+        scope.walletRepository,
+        scope.walletLedgerEntryRepository,
       );
 
       return markProcessed(
         transaction,
         balance,
-        wagerTransactionRepository,
-        outboxRepository,
+        scope.wagerTransactionRepository,
+        scope.outboxMessageRepository,
         {
           id: wallet.id,
           balanceBefore: toBalanceSnapshot(balanceBefore),
@@ -186,8 +183,8 @@ export default class ProcessKindRollbackUseCase {
         transaction,
         getFailureCode(error, FAILURE_CODES.ROLLBACK_INSUFFICIENT_BALANCE),
         wallet ? toBalanceSnapshot(wallet.balance) : undefined,
-        wagerTransactionRepository,
-        outboxRepository,
+        scope.wagerTransactionRepository,
+        scope.outboxMessageRepository,
       );
     }
   }

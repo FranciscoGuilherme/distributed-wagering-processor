@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import WalletAlreadyExistsError from '../../../domain/@shared/errors/wallet-already-exists.error';
 import WalletAggregate from '../../../domain/entities/wallet.aggregate';
 import WalletRepositoryInterface from '../../../domain/repositories/wallet-repository.interface';
@@ -20,10 +20,6 @@ export default class WalletRepository implements WalletRepositoryInterface {
     @InjectRepository(WalletModel)
     private readonly repository: Repository<WalletModel>,
   ) {}
-
-  withTransaction(manager: EntityManager): WalletRepositoryInterface {
-    return new WalletRepository(manager.getRepository(WalletModel));
-  }
 
   async findById(id: string): Promise<WalletAggregate | null> {
     const model = await this.repository.findOneBy({ id });

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import WalletLedgerEntry from '../../../domain/entities/wallet-ledger-entry.entity';
 import WalletLedgerEntryInterface from '../../../domain/repositories/wallet-ledger-entry.interface';
 import WalletLedgerEntryMapper from '../../mappers/wallet-ledger-entry.mapper';
@@ -16,12 +16,6 @@ export default class WalletLedgerEntryRepository implements WalletLedgerEntryInt
     @InjectRepository(WalletLedgerEntryModel)
     private readonly repository: Repository<WalletLedgerEntryModel>,
   ) {}
-
-  withTransaction(manager: EntityManager): WalletLedgerEntryInterface {
-    return new WalletLedgerEntryRepository(
-      manager.getRepository(WalletLedgerEntryModel),
-    );
-  }
 
   async findById(id: string): Promise<WalletLedgerEntry | null> {
     const model = await this.repository.findOneBy({ id });

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import IdempotencyKeyAlreadyExistsError from '../../../domain/@shared/errors/idempotency-key-already-exists.error';
 import WagerTransaction, {
   WagerTransactionKind,
@@ -24,12 +24,6 @@ export default class WagerTransactionRepository implements WagerTransactionRepos
     @InjectRepository(WagerTransactionModel)
     private readonly repository: Repository<WagerTransactionModel>,
   ) {}
-
-  withTransaction(manager: EntityManager): WagerTransactionRepositoryInterface {
-    return new WagerTransactionRepository(
-      manager.getRepository(WagerTransactionModel),
-    );
-  }
 
   async findById(id: string): Promise<WagerTransaction | null> {
     const model = await this.repository.findOneBy({ id });

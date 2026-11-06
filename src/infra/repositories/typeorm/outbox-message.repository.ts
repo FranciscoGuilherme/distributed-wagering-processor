@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
-import { EntityManager, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import OutboxMessage from '../../../domain/entities/outbox-message.entity';
 import OutboxMessageRepositoryInterface, {
   type ClaimedOutboxEvent,
@@ -17,12 +17,6 @@ export default class OutboxMessageRepository implements OutboxMessageRepositoryI
     @InjectRepository(OutboxMessageModel)
     private readonly repository: Repository<OutboxMessageModel>,
   ) {}
-
-  withTransaction(manager: EntityManager): OutboxMessageRepositoryInterface {
-    return new OutboxMessageRepository(
-      manager.getRepository(OutboxMessageModel),
-    );
-  }
 
   async findById(id: string): Promise<OutboxMessage | null> {
     const model = await this.repository.findOneBy({ id });

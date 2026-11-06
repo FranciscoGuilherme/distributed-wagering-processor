@@ -2,6 +2,10 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import {
+  UNIT_OF_WORK,
+  type UnitOfWork,
+} from './application/ports/unit-of-work.interface';
 import CreateWalletUseCase from './application/usecases/create-wallet.usecase';
 import ProcessKindBetUseCase from './application/usecases/process-kind-bet.usecase';
 import ProcessKindLossUseCase from './application/usecases/process-kind-loss.usecase';
@@ -10,10 +14,6 @@ import ProcessKindRollbackUseCase from './application/usecases/process-kind-roll
 import ProcessKindWinUseCase from './application/usecases/process-kind-win.usecase';
 import ProcessOperationUseCase from './application/usecases/process-operation.usecase';
 import type InboxMessageRepositoryInterface from './domain/repositories/inbox-message-repository.interface';
-import type OutboxMessageRepositoryInterface from './domain/repositories/outbox-message-repository.interface';
-import type WagerTransactionRepositoryInterface from './domain/repositories/wager-transaction-repository.interface';
-import type WalletLedgerEntryInterface from './domain/repositories/wallet-ledger-entry.interface';
-import type WalletRepositoryInterface from './domain/repositories/wallet-repository.interface';
 import { WageringController } from './infra/controllers/wagering.controller';
 import { WalletsController } from './infra/controllers/wallets.controller';
 import OutboxPublisherWorker from './infra/messaging/sqs/outbox-publisher.worker';
@@ -40,110 +40,47 @@ import WalletLedgerEntryRepository, {
 import WalletRepository, {
   WALLET_REPOSITORY,
 } from './infra/repositories/typeorm/wallet.repository';
-import { UnitOfWork } from './infra/repositories/unit-of-work';
+import { TypeOrmUnitOfWork } from './infra/repositories/unit-of-work';
 
 @Module({
   controllers: [WageringController, WalletsController],
   providers: [
-    UnitOfWork,
+    TypeOrmUnitOfWork,
+    {
+      provide: UNIT_OF_WORK,
+      useExisting: TypeOrmUnitOfWork,
+    },
     SqsConsumerWorker,
     OutboxPublisherWorker,
     {
       provide: CreateWalletUseCase,
-      inject: [
-        UnitOfWork,
-        WALLET_REPOSITORY,
-        WAGER_TRANSACTION_REPOSITORY,
-        WALLET_LEDGER_ENTRY_REPOSITORY,
-        OUTBOX_MESSAGE_REPOSITORY,
-      ],
-      useFactory: (
-        uow: UnitOfWork,
-        wallets: WalletRepositoryInterface,
-        transactions: WagerTransactionRepositoryInterface,
-        ledger: WalletLedgerEntryInterface,
-        outbox: OutboxMessageRepositoryInterface,
-      ) => new CreateWalletUseCase(uow, wallets, transactions, ledger, outbox),
+      inject: [UNIT_OF_WORK],
+      useFactory: (uow: UnitOfWork) => new CreateWalletUseCase(uow),
     },
     {
       provide: ProcessKindBetUseCase,
-      inject: [
-        WALLET_REPOSITORY,
-        WALLET_LEDGER_ENTRY_REPOSITORY,
-        WAGER_TRANSACTION_REPOSITORY,
-        OUTBOX_MESSAGE_REPOSITORY,
-      ],
-      useFactory: (
-        wallets: WalletRepositoryInterface,
-        ledger: WalletLedgerEntryInterface,
-        transactions: WagerTransactionRepositoryInterface,
-        outbox: OutboxMessageRepositoryInterface,
-      ) => new ProcessKindBetUseCase(wallets, ledger, transactions, outbox),
+      useFactory: () => new ProcessKindBetUseCase(),
     },
     {
       provide: ProcessKindWinUseCase,
-      inject: [
-        WALLET_REPOSITORY,
-        WALLET_LEDGER_ENTRY_REPOSITORY,
-        WAGER_TRANSACTION_REPOSITORY,
-        OUTBOX_MESSAGE_REPOSITORY,
-      ],
-      useFactory: (
-        wallets: WalletRepositoryInterface,
-        ledger: WalletLedgerEntryInterface,
-        transactions: WagerTransactionRepositoryInterface,
-        outbox: OutboxMessageRepositoryInterface,
-      ) => new ProcessKindWinUseCase(wallets, ledger, transactions, outbox),
+      useFactory: () => new ProcessKindWinUseCase(),
     },
     {
       provide: ProcessKindLossUseCase,
-      inject: [
-        WALLET_REPOSITORY,
-        WAGER_TRANSACTION_REPOSITORY,
-        OUTBOX_MESSAGE_REPOSITORY,
-      ],
-      useFactory: (
-        wallets: WalletRepositoryInterface,
-        transactions: WagerTransactionRepositoryInterface,
-        outbox: OutboxMessageRepositoryInterface,
-      ) => new ProcessKindLossUseCase(wallets, transactions, outbox),
+      useFactory: () => new ProcessKindLossUseCase(),
     },
     {
       provide: ProcessKindRollbackUseCase,
-      inject: [
-        WALLET_REPOSITORY,
-        WALLET_LEDGER_ENTRY_REPOSITORY,
-        WAGER_TRANSACTION_REPOSITORY,
-        OUTBOX_MESSAGE_REPOSITORY,
-      ],
-      useFactory: (
-        wallets: WalletRepositoryInterface,
-        ledger: WalletLedgerEntryInterface,
-        transactions: WagerTransactionRepositoryInterface,
-        outbox: OutboxMessageRepositoryInterface,
-      ) =>
-        new ProcessKindRollbackUseCase(wallets, ledger, transactions, outbox),
+      useFactory: () => new ProcessKindRollbackUseCase(),
     },
     {
       provide: ProcessKindRefoundUseCase,
-      inject: [
-        WALLET_REPOSITORY,
-        WALLET_LEDGER_ENTRY_REPOSITORY,
-        WAGER_TRANSACTION_REPOSITORY,
-        OUTBOX_MESSAGE_REPOSITORY,
-      ],
-      useFactory: (
-        wallets: WalletRepositoryInterface,
-        ledger: WalletLedgerEntryInterface,
-        transactions: WagerTransactionRepositoryInterface,
-        outbox: OutboxMessageRepositoryInterface,
-      ) => new ProcessKindRefoundUseCase(wallets, ledger, transactions, outbox),
+      useFactory: () => new ProcessKindRefoundUseCase(),
     },
     {
       provide: ProcessOperationUseCase,
       inject: [
-        UnitOfWork,
-        WAGER_TRANSACTION_REPOSITORY,
+        UNIT_OF_WORK,
         INBOX_MESSAGE_REPOSITORY,
         ProcessKindBetUseCase,
         ProcessKindWinUseCase,
@@ -153,7 +90,6 @@ import { UnitOfWork } from './infra/repositories/unit-of-work';
       ],
       useFactory: (
         uow: UnitOfWork,
-        transactions: WagerTransactionRepositoryInterface,
         inbox: InboxMessageRepositoryInterface,
         bet: ProcessKindBetUseCase,
         win: ProcessKindWinUseCase,
@@ -163,7 +99,6 @@ import { UnitOfWork } from './infra/repositories/unit-of-work';
       ) =>
         new ProcessOperationUseCase(
           uow,
-          transactions,
           inbox,
           bet,
           win,

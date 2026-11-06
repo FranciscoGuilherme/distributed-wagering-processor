@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import InboxMessageAlreadyExistsError from '../../../domain/@shared/errors/inbox-message-already-exists.error';
 import InboxMessage from '../../../domain/entities/inbox-message.entity';
 import InboxMessageRepositoryInterface from '../../../domain/repositories/inbox-message-repository.interface';
@@ -20,10 +20,6 @@ export default class InboxMessageRepository implements InboxMessageRepositoryInt
     @InjectRepository(InboxMessageModel)
     private readonly repository: Repository<InboxMessageModel>,
   ) {}
-
-  withTransaction(manager: EntityManager): InboxMessageRepositoryInterface {
-    return new InboxMessageRepository(manager.getRepository(InboxMessageModel));
-  }
 
   async findById(id: string): Promise<InboxMessage | null> {
     const model = await this.repository.findOneBy({ id });

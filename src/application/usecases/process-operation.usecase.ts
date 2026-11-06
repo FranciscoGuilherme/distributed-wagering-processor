@@ -1,9 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { isUndefined } from 'lodash';
+import Decimal from 'decimal.js';
 import { EntityManager } from 'typeorm';
 import IdempotencyConflictError from '../../domain/@shared/errors/idempotency-conflict.error';
 import IdempotencyKeyAlreadyExistsError from '../../domain/@shared/errors/idempotency-key-already-exists.error';
+import InboxMessageAlreadyExistsError from '../../domain/@shared/errors/inbox-message-already-exists.error';
+import InboxMessageConflictError from '../../domain/@shared/errors/inbox-message-conflict.error';
 import WagerTransaction, {
   WagerTransactionKind,
   WagerTransactionStatus,
@@ -47,7 +49,11 @@ export type ProcessOperationResult = {
   status: WagerTransactionStatus;
   balance?: WagerTransactionBalance;
   idempotentReplay: boolean;
+  failureCode?: WagerTransaction['failureCode'];
 };
+
+export type ProcessOperationOutcome =
+  ProcessOperationResult | { duplicateMessage: true; idempotentReplay: true };
 
 @Injectable()
 export default class ProcessOperationUseCase {
@@ -64,19 +70,38 @@ export default class ProcessOperationUseCase {
     private readonly processKindRollbackUseCase: ProcessKindRollbackUseCase,
   ) {}
 
-  async execute(props: ProcessOperationProps): Promise<ProcessOperationResult> {
+  async execute(
+    props: ProcessOperationProps,
+  ): Promise<ProcessOperationOutcome> {
     const payloadHash = this.createPayloadHash(props);
 
     try {
       return await this.uow.execute(async (manager: EntityManager) => {
         const wagerTransactionRepository =
           this.wagerTransactionRepository.withTransaction(manager);
+        const inboxRepository =
+          this.inboxMessageRepository.withTransaction(manager);
+
+        const existingInbox = props.inbox
+          ? await inboxRepository.findByConsumerAndMessageId(
+              props.inbox.consumerName,
+              props.inbox.messageId,
+            )
+          : null;
+
+        if (existingInbox) {
+          this.assertInboxPayload(existingInbox.payloadHash, payloadHash);
+          return { duplicateMessage: true, idempotentReplay: true };
+        }
+
         const existing = await wagerTransactionRepository.findByIdempotencyKey(
           props.idempotencyKey,
         );
 
         if (existing) {
-          return this.toReplayResult(existing, payloadHash);
+          const result = this.toReplayResult(existing, payloadHash);
+          await this.recordInbox(manager, props, payloadHash);
+          return result;
         }
 
         const wagerTransaction = WagerTransactionFactory.create({
@@ -100,18 +125,90 @@ export default class ProcessOperationUseCase {
         return result;
       });
     } catch (error) {
-      if (!(error instanceof IdempotencyKeyAlreadyExistsError)) {
-        throw error;
+      if (error instanceof IdempotencyKeyAlreadyExistsError) {
+        return this.recoverIdempotencyRace(props, payloadHash);
       }
 
-      const existing =
-        await this.wagerTransactionRepository.findByIdempotencyKey(
-          props.idempotencyKey,
-        );
-      if (!existing) {
-        throw error;
+      if (error instanceof InboxMessageAlreadyExistsError) {
+        return this.recoverInboxRace(props, payloadHash);
       }
-      return this.toReplayResult(existing, payloadHash);
+
+      throw error;
+    }
+  }
+
+  private async recoverIdempotencyRace(
+    props: ProcessOperationProps,
+    payloadHash: string,
+  ): Promise<ProcessOperationOutcome> {
+    try {
+      return await this.uow.execute(async (manager) => {
+        const inboxRepository =
+          this.inboxMessageRepository.withTransaction(manager);
+        const existingInbox = props.inbox
+          ? await inboxRepository.findByConsumerAndMessageId(
+              props.inbox.consumerName,
+              props.inbox.messageId,
+            )
+          : null;
+        if (existingInbox) {
+          this.assertInboxPayload(existingInbox.payloadHash, payloadHash);
+          return { duplicateMessage: true, idempotentReplay: true };
+        }
+
+        const existing = await this.wagerTransactionRepository
+          .withTransaction(manager)
+          .findByIdempotencyKey(props.idempotencyKey);
+        if (!existing) {
+          throw new IdempotencyKeyAlreadyExistsError(
+            'The concurrent transaction could not be found',
+          );
+        }
+
+        const result = this.toReplayResult(existing, payloadHash);
+        await this.recordInbox(manager, props, payloadHash);
+        return result;
+      });
+    } catch (error) {
+      if (error instanceof InboxMessageAlreadyExistsError) {
+        return this.recoverInboxRace(props, payloadHash);
+      }
+      throw error;
+    }
+  }
+
+  private async recoverInboxRace(
+    props: ProcessOperationProps,
+    payloadHash: string,
+  ): Promise<ProcessOperationOutcome> {
+    if (!props.inbox) {
+      throw new InboxMessageAlreadyExistsError(
+        'An inbox uniqueness violation occurred without inbox metadata',
+      );
+    }
+
+    const existing =
+      await this.inboxMessageRepository.findByConsumerAndMessageId(
+        props.inbox.consumerName,
+        props.inbox.messageId,
+      );
+    if (!existing) {
+      throw new InboxMessageAlreadyExistsError(
+        'The conflicting inbox row could not be found after rollback',
+      );
+    }
+    this.assertInboxPayload(existing.payloadHash, payloadHash);
+    return { duplicateMessage: true, idempotentReplay: true };
+  }
+
+  private assertInboxPayload(
+    existingPayloadHash: string,
+    payloadHash: string,
+  ): void {
+    if (existingPayloadHash !== payloadHash) {
+      throw new InboxMessageConflictError(
+        'A mensagem já foi recebida com conteúdo de negócio diferente',
+      );
     }
   }
 
@@ -169,6 +266,7 @@ export default class ProcessOperationUseCase {
       status: existing.status,
       balance: existing.resultBalance,
       idempotentReplay: true,
+      failureCode: existing.failureCode,
     };
   }
 
@@ -177,14 +275,14 @@ export default class ProcessOperationUseCase {
       externalTransactionId: props.externalTransactionId,
       gameId: props.gameId,
       kind: props.kind,
-      referenceExternalTransactionId:
-        props.referenceExternalTransactionId ?? null,
       money: {
-        amount: props.money.amount,
+        amount: new Decimal(props.money.amount).toFixed(2),
         currency: props.money.currency,
       },
       playerId: props.playerId,
       providerId: props.providerId,
+      referenceExternalTransactionId:
+        props.referenceExternalTransactionId ?? null,
       roundId: props.roundId,
       walletId: props.walletId,
     };
@@ -199,7 +297,7 @@ export default class ProcessOperationUseCase {
     props: ProcessOperationProps,
     payloadHash: string,
   ): Promise<void> {
-    if (isUndefined(props.inbox)) {
+    if (!props.inbox) {
       return;
     }
 

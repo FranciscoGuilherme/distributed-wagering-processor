@@ -8,4 +8,9 @@ export default interface WagerTransactionRepositoryInterface extends RepositoryI
   findByIdempotencyKey(
     idempotencyKey: string,
   ): Promise<WagerTransaction | null>;
+
+  findByProviderAndExternalTransactionIdForUpdate(
+    providerId: string,
+    externalTransactionId: string,
+  ): Promise<WagerTransaction | null>;
 }

@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import Decimal from 'decimal.js';
 import { EntityManager } from 'typeorm';
+import { FAILURE_CODES } from '../../domain/@shared/constants/failure-codes';
 import OperationRejectedError from '../../domain/@shared/errors/operation-rejected.error';
 import ReferenceTransactionIdMissing from '../../domain/@shared/errors/reference-transaction-id-missing.error';
 import Money from '../../domain/@shared/value-objects/money.vo';
@@ -19,6 +20,7 @@ import { OUTBOX_MESSAGE_REPOSITORY } from '../../infra/repositories/typeorm/outb
 import { WAGER_TRANSACTION_REPOSITORY } from '../../infra/repositories/typeorm/wager-transaction.repository';
 import { WALLET_LEDGER_ENTRY_REPOSITORY } from '../../infra/repositories/typeorm/wallet-ledger-entry.repository';
 import { WALLET_REPOSITORY } from '../../infra/repositories/typeorm/wallet.repository';
+import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
 import {
   getFailureCode,
   isBusinessRuleError,
@@ -60,7 +62,7 @@ export default class ProcessKindRollbackUseCase {
 
     if (!props.referenceExternalTransactionId) {
       throw new ReferenceTransactionIdMissing(
-        'referenceExternalTransactionId not found',
+        SYSTEM_MESSAGES.APPLICATION.REFERENCE_TRANSACTION_ID_REQUIRED,
       );
     }
 
@@ -100,7 +102,9 @@ export default class ProcessKindRollbackUseCase {
     try {
       wallet = await walletRepository.findByIdForUpdate(transaction.walletId);
       if (!wallet) {
-        throw new OperationRejectedError('Wallet not found');
+        throw new OperationRejectedError(
+          SYSTEM_MESSAGES.APPLICATION.WALLET_NOT_FOUND,
+        );
       }
       const alreadyReversed =
         await wagerTransactionRepository.findRollbackByReferenceTransactionId(
@@ -108,14 +112,14 @@ export default class ProcessKindRollbackUseCase {
         );
       if (alreadyReversed) {
         throw new OperationRejectedError(
-          'The referenced transaction has already been rolled back',
+          SYSTEM_MESSAGES.APPLICATION.REFERENCE_ALREADY_ROLLED_BACK,
         );
       }
       if (
         wagerTransactionReference.status !== WagerTransactionStatus.Processed
       ) {
         throw new OperationRejectedError(
-          'The referenced transaction must be processed',
+          SYSTEM_MESSAGES.APPLICATION.REFERENCE_NOT_PROCESSED,
         );
       }
       if (
@@ -126,7 +130,7 @@ export default class ProcessKindRollbackUseCase {
         ].includes(wagerTransactionReference.kind)
       ) {
         throw new OperationRejectedError(
-          'The referenced transaction kind cannot be rolled back',
+          SYSTEM_MESSAGES.APPLICATION.REFERENCE_KIND_NOT_ROLLBACKABLE,
         );
       }
       if (
@@ -136,7 +140,7 @@ export default class ProcessKindRollbackUseCase {
         wagerTransactionReference.roundId !== transaction.roundId
       ) {
         throw new OperationRejectedError(
-          'The reference does not belong to the same operation context',
+          SYSTEM_MESSAGES.APPLICATION.REFERENCE_CONTEXT_MISMATCH,
         );
       }
       if (
@@ -147,7 +151,7 @@ export default class ProcessKindRollbackUseCase {
         )
       ) {
         throw new OperationRejectedError(
-          'The rollback must match the referenced transaction currency and amount',
+          SYSTEM_MESSAGES.APPLICATION.ROLLBACK_AMOUNT_MISMATCH,
         );
       }
       if (
@@ -156,7 +160,7 @@ export default class ProcessKindRollbackUseCase {
         wallet.balance.value.currency !== transaction.money.value.currency
       ) {
         throw new OperationRejectedError(
-          'The wallet owner or currency does not match the rollback',
+          SYSTEM_MESSAGES.APPLICATION.ROLLBACK_WALLET_CONTEXT_MISMATCH,
         );
       }
 
@@ -204,7 +208,7 @@ export default class ProcessKindRollbackUseCase {
 
       return markRejected(
         transaction,
-        getFailureCode(error, 'BN-004'),
+        getFailureCode(error, FAILURE_CODES.ROLLBACK_INSUFFICIENT_BALANCE),
         wallet ? toBalanceSnapshot(wallet.balance) : undefined,
         wagerTransactionRepository,
         outboxRepository,

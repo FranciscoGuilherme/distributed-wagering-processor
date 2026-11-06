@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
 import Decimal from 'decimal.js';
 import { EntityManager } from 'typeorm';
+import type { FailureCode } from '../../domain/@shared/constants/failure-codes';
 import IdempotencyConflictError from '../../domain/@shared/errors/idempotency-conflict.error';
 import IdempotencyKeyAlreadyExistsError from '../../domain/@shared/errors/idempotency-key-already-exists.error';
 import InboxMessageAlreadyExistsError from '../../domain/@shared/errors/inbox-message-already-exists.error';
@@ -18,6 +19,7 @@ import type WagerTransactionRepositoryInterface from '../../domain/repositories/
 import { INBOX_MESSAGE_REPOSITORY } from '../../infra/repositories/typeorm/inbox-message.repository';
 import { WAGER_TRANSACTION_REPOSITORY } from '../../infra/repositories/typeorm/wager-transaction.repository';
 import { UnitOfWork } from '../../infra/repositories/unit-of-work';
+import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
 import ProcessKindBetUseCase from './process-kind-bet.usecase';
 import ProcessKindLossUseCase from './process-kind-loss.usecase';
 import ProcessKindRefoundUseCase from './process-kind-refound.usecase';
@@ -49,7 +51,7 @@ export type ProcessOperationResult = {
   status: WagerTransactionStatus;
   balance?: WagerTransactionBalance;
   idempotentReplay: boolean;
-  failureCode?: WagerTransaction['failureCode'];
+  failureCode?: FailureCode;
 };
 
 export type ProcessOperationOutcome =
@@ -161,7 +163,7 @@ export default class ProcessOperationUseCase {
           .findByIdempotencyKey(props.idempotencyKey);
         if (!existing) {
           throw new IdempotencyKeyAlreadyExistsError(
-            'The concurrent transaction could not be found',
+            SYSTEM_MESSAGES.PERSISTENCE.CONCURRENT_TRANSACTION_NOT_FOUND,
           );
         }
 
@@ -183,7 +185,7 @@ export default class ProcessOperationUseCase {
   ): Promise<ProcessOperationOutcome> {
     if (!props.inbox) {
       throw new InboxMessageAlreadyExistsError(
-        'An inbox uniqueness violation occurred without inbox metadata',
+        SYSTEM_MESSAGES.PERSISTENCE.INBOX_METADATA_MISSING,
       );
     }
 
@@ -194,7 +196,7 @@ export default class ProcessOperationUseCase {
       );
     if (!existing) {
       throw new InboxMessageAlreadyExistsError(
-        'The conflicting inbox row could not be found after rollback',
+        SYSTEM_MESSAGES.PERSISTENCE.CONFLICTING_INBOX_NOT_FOUND,
       );
     }
     this.assertInboxPayload(existing.payloadHash, payloadHash);
@@ -207,7 +209,7 @@ export default class ProcessOperationUseCase {
   ): void {
     if (existingPayloadHash !== payloadHash) {
       throw new InboxMessageConflictError(
-        'A mensagem já foi recebida com conteúdo de negócio diferente',
+        SYSTEM_MESSAGES.PERSISTENCE.INBOX_PAYLOAD_CONFLICT,
       );
     }
   }
@@ -237,7 +239,9 @@ export default class ProcessOperationUseCase {
           transaction,
         );
       default:
-        throw new Error(`Unsupported transaction kind: ${transaction.kind}`);
+        throw new Error(
+          SYSTEM_MESSAGES.APPLICATION.UNSUPPORTED_TRANSACTION_KIND,
+        );
     }
   }
 
@@ -247,7 +251,7 @@ export default class ProcessOperationUseCase {
   ): ProcessOperationResult {
     if (existing.payloadHash !== payloadHash) {
       throw new IdempotencyConflictError(
-        'A Idempotency-Key já foi usada com outro payload',
+        SYSTEM_MESSAGES.HTTP.IDEMPOTENCY_CONFLICT,
       );
     }
 
@@ -257,7 +261,7 @@ export default class ProcessOperationUseCase {
       existing.status !== WagerTransactionStatus.Rejected
     ) {
       throw new Error(
-        `A transação ${existing.id} não tem o saldo do resultado salvo`,
+        SYSTEM_MESSAGES.APPLICATION.STORED_RESULT_BALANCE_MISSING,
       );
     }
 

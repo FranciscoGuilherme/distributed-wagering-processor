@@ -1,0 +1,8 @@
+export const FAILURE_CODES = {
+  INSUFFICIENT_BALANCE: 'BN-001',
+  BUSINESS_RULE_REJECTED: 'BN-002',
+  REFUND_NOT_ALLOWED: 'BN-003',
+  ROLLBACK_INSUFFICIENT_BALANCE: 'BN-004',
+} as const;
+
+export type FailureCode = (typeof FAILURE_CODES)[keyof typeof FAILURE_CODES];

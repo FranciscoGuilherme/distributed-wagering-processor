@@ -1,38 +1,44 @@
+import type { FailureCode } from '../../domain/@shared/constants/failure-codes';
 import WagerTransaction from '../../domain/entities/wager-transaction.entity';
 import { WagerTransactionModel } from '../models/wager-transaction.model';
 
 export default class WagerTransactionMapper {
   static toEntity(model: WagerTransactionModel): WagerTransaction {
-    return new WagerTransaction({
-      providerId: model.providerId,
-      externalTransactionId: model.externalTransactionId,
-      idempotencyKey: model.idempotencyKey,
-      payloadHash: model.payloadHash,
-      walletId: model.walletId,
-      playerId: model.playerId,
-      roundId: model.roundId,
-      gameId: model.gameId,
-      kind: model.kind,
-      money: {
-        amount: model.amount,
-        currency: model.currency,
-      },
-      referenceExternalTransactionId:
-        model.referenceExternalTransactionId ?? undefined,
-      createdAt: model.createdAt,
-      status: model.status,
-      referenceTransactionId: model.referenceTransactionId ?? undefined,
-      failureCode: model.failureCode ?? undefined,
-      processedAt: model.processedAt ?? undefined,
-      resultBalance:
-        model.resultBalanceAmount !== null &&
-        model.resultBalanceCurrency !== null
-          ? {
-              amount: model.resultBalanceAmount,
-              currency: model.resultBalanceCurrency,
-            }
+    return new WagerTransaction(
+      {
+        providerId: model.providerId,
+        externalTransactionId: model.externalTransactionId,
+        idempotencyKey: model.idempotencyKey,
+        payloadHash: model.payloadHash,
+        walletId: model.walletId,
+        playerId: model.playerId,
+        roundId: model.roundId,
+        gameId: model.gameId,
+        kind: model.kind,
+        money: {
+          amount: model.amount,
+          currency: model.currency,
+        },
+        referenceExternalTransactionId:
+          model.referenceExternalTransactionId ?? undefined,
+        createdAt: model.createdAt,
+        status: model.status,
+        referenceTransactionId: model.referenceTransactionId ?? undefined,
+        failureCode: model.failureCode
+          ? (model.failureCode as FailureCode)
           : undefined,
-    }, model.id);
+        processedAt: model.processedAt ?? undefined,
+        resultBalance:
+          model.resultBalanceAmount !== null &&
+          model.resultBalanceCurrency !== null
+            ? {
+                amount: model.resultBalanceAmount,
+                currency: model.resultBalanceCurrency,
+              }
+            : undefined,
+      },
+      model.id,
+    );
   }
 
   static toPersistence(entity: WagerTransaction): WagerTransactionModel {

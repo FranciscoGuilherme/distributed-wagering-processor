@@ -1,10 +1,13 @@
+import {
+  FAILURE_CODES,
+  type FailureCode,
+} from '../../domain/@shared/constants/failure-codes';
 import BalanceError from '../../domain/@shared/errors/balance.error';
 import MoneyCurrencyError from '../../domain/@shared/errors/money-currency.error';
 import OperationRejectedError from '../../domain/@shared/errors/operation-rejected.error';
 import RefoundNotAllowedError from '../../domain/@shared/errors/refound-not-allowed.error';
 import Money from '../../domain/@shared/value-objects/money.vo';
 import WagerTransaction, {
-  type FailureCode,
   type WagerTransactionBalance,
 } from '../../domain/entities/wager-transaction.entity';
 import { LedgerDirection } from '../../domain/entities/wallet-ledger-entry.entity';
@@ -147,16 +150,16 @@ export function isBusinessRuleError(error: unknown): boolean {
 
 export function getFailureCode(
   error: unknown,
-  insufficientBalanceCode: FailureCode = 'BN-001',
+  insufficientBalanceCode: FailureCode = FAILURE_CODES.INSUFFICIENT_BALANCE,
 ): FailureCode {
   if (error instanceof OperationRejectedError) {
-    return error.failureCode ?? 'BN-002';
+    return error.failureCode ?? FAILURE_CODES.BUSINESS_RULE_REJECTED;
   }
   if (error instanceof BalanceError) {
     return insufficientBalanceCode;
   }
   if (error instanceof RefoundNotAllowedError) {
-    return 'BN-003';
+    return FAILURE_CODES.REFUND_NOT_ALLOWED;
   }
-  return 'BN-002';
+  return FAILURE_CODES.BUSINESS_RULE_REJECTED;
 }

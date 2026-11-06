@@ -1,4 +1,6 @@
 import Decimal from 'decimal.js';
+import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
+import type { FailureCode } from '../@shared/constants/failure-codes';
 import Entity from '../@shared/entity';
 import Money from '../@shared/value-objects/money.vo';
 import UniqueEntityId from '../@shared/value-objects/unique-entity-id.vo';
@@ -25,8 +27,6 @@ export type WagerTransactionBalance = {
   currency: string;
 };
 
-export type FailureCode = 'BN-001' | 'BN-002' | 'BN-003' | 'BN-004';
-
 export type WagerTransactionProps = {
   providerId: string;
   externalTransactionId: string;
@@ -45,7 +45,7 @@ export type WagerTransactionProps = {
   createdAt?: Date;
   status: string;
   referenceTransactionId?: string;
-  failureCode?: string;
+  failureCode?: FailureCode;
   processedAt?: Date;
   resultBalance?: WagerTransactionBalance;
 };
@@ -88,7 +88,7 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
     this.createdAt = props?.createdAt || new Date();
     this._status = props.status as WagerTransactionStatus;
     this._referenceTransactionId = props?.referenceTransactionId;
-    this._failureCode = props?.failureCode as FailureCode;
+    this._failureCode = props?.failureCode;
     this._processedAt = props?.processedAt;
     this._resultBalance = props.resultBalance;
   }
@@ -161,9 +161,7 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
     ];
 
     if (terminalStatuses.includes(this._status)) {
-      throw new Error(
-        `Cannot transition terminal transaction: ${this._status}`,
-      );
+      throw new Error(SYSTEM_MESSAGES.DOMAIN.TERMINAL_TRANSACTION_TRANSITION);
     }
   }
 }

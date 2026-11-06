@@ -1,4 +1,4 @@
-import type { FailureCode } from '../../entities/wager-transaction.entity';
+import type { FailureCode } from '../constants/failure-codes';
 
 export default class OperationRejectedError extends Error {
   constructor(

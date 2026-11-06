@@ -1,49 +1,19 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { WagerOperationDto } from '../../../application/dtos/wager-operation.dto';
 import ProcessOperationUseCase from '../../../application/usecases/process-operation.usecase';
 import InvalidQueueMessageError from '../../../domain/@shared/errors/invalid-queue-message.error';
+import { isRecord } from '../../../helpers/validations';
 import { SYSTEM_MESSAGES } from '../../../shared/constants/system-messages';
+import { WagerTransactionEnvelopeDto } from '../../dto/envelop.dto';
 import { WAGER_TRANSACTION_CONSUMER_NAME } from './sqs.constants';
-
-type RecordValue = Record<string, unknown>;
-
-function isRecord(value: unknown): value is RecordValue {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 export default class QueueManagerService {
   constructor(private readonly processOperation: ProcessOperationUseCase) {}
 
-  async processQueueMessage(envelope: unknown): Promise<void> {
-    if (
-      !isRecord(envelope) ||
-      envelope.type !== 'WagerTransactionRequested' ||
-      typeof envelope.messageId !== 'string' ||
-      !envelope.messageId.trim() ||
-      typeof envelope.occurredAt !== 'string' ||
-      Number.isNaN(Date.parse(envelope.occurredAt)) ||
-      !isRecord(envelope.data)
-    ) {
-      throw new InvalidQueueMessageError(
-        SYSTEM_MESSAGES.VALIDATION.INVALID_QUEUE_ENVELOPE,
-      );
-    }
-
-    const { idempotencyKey, ...businessData } = envelope.data;
-    if (
-      typeof idempotencyKey !== 'string' ||
-      !idempotencyKey.trim() ||
-      idempotencyKey !== idempotencyKey.trim() ||
-      idempotencyKey.length > 200
-    ) {
-      throw new InvalidQueueMessageError(
-        SYSTEM_MESSAGES.VALIDATION.INVALID_QUEUE_IDEMPOTENCY_KEY,
-      );
-    }
-
-    const operation = plainToInstance(WagerOperationDto, businessData);
-    const validationErrors = validateSync(operation, {
+  async processQueueMessage(requestData: unknown): Promise<void> {
+    const envelope = this.getEnvelopRequest(requestData);
+    const idempotencyKey = this.buildIdempotencyKey(envelope);
+    const validationErrors = validateSync(envelope.data, {
       whitelist: true,
       forbidNonWhitelisted: true,
       forbidUnknownValues: true,
@@ -56,22 +26,50 @@ export default class QueueManagerService {
 
     await this.processOperation.execute({
       idempotencyKey,
-      providerId: operation.providerId,
-      externalTransactionId: operation.externalTransactionId,
-      playerId: operation.playerId,
-      walletId: operation.walletId,
-      roundId: operation.roundId,
-      gameId: operation.gameId,
-      kind: operation.kind,
+      providerId: envelope.data.providerId,
+      externalTransactionId: envelope.data.externalTransactionId,
+      playerId: envelope.data.playerId,
+      walletId: envelope.data.walletId,
+      roundId: envelope.data.roundId,
+      gameId: envelope.data.gameId,
+      kind: envelope.data.kind,
       money: {
-        amount: operation.money.amount,
-        currency: operation.money.currency,
+        amount: envelope.data.money.amount,
+        currency: envelope.data.money.currency,
       },
-      referenceExternalTransactionId: operation.referenceExternalTransactionId,
+      referenceExternalTransactionId:
+        envelope.data.referenceExternalTransactionId,
       inbox: {
         consumerName: WAGER_TRANSACTION_CONSUMER_NAME,
         messageId: envelope.messageId,
       },
     });
+  }
+
+  private getEnvelopRequest(envelope: unknown): WagerTransactionEnvelopeDto {
+    if (!isRecord(envelope)) {
+      throw new InvalidQueueMessageError(
+        SYSTEM_MESSAGES.VALIDATION.INVALID_QUEUE_ENVELOPE,
+      );
+    }
+
+    const dto = plainToInstance(WagerTransactionEnvelopeDto, envelope);
+    const errors = validateSync(dto, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      forbidUnknownValues: true,
+    });
+
+    if (errors.length > 0) {
+      throw new InvalidQueueMessageError(
+        SYSTEM_MESSAGES.VALIDATION.INVALID_QUEUE_ENVELOPE,
+      );
+    }
+
+    return dto;
+  }
+
+  private buildIdempotencyKey(envelope: WagerTransactionEnvelopeDto): string {
+    return envelope.data.providerId + ':' + envelope.data.externalTransactionId;
   }
 }

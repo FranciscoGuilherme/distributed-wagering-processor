@@ -1,33 +1,32 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
-import Decimal from 'decimal.js';
+import { isUndefined } from 'lodash';
 import { EntityManager } from 'typeorm';
 import IdempotencyConflictError from '../../domain/@shared/errors/idempotency-conflict.error';
-import Money from '../../domain/@shared/value-objects/money.vo';
-import type { WagerTransactionBalance } from '../../domain/entities/wager-transaction.entity';
 import WagerTransaction, {
   WagerTransactionKind,
   WagerTransactionStatus,
+  type WagerTransactionBalance,
 } from '../../domain/entities/wager-transaction.entity';
-import { LedgerDirection } from '../../domain/entities/wallet-ledger-entry.entity';
-import WalletAggregate from '../../domain/entities/wallet.aggregate';
+import InboxMessageFactory from '../../domain/factories/inbox-message.factory';
 import WagerTransactionFactory from '../../domain/factories/wager-transaction.factory';
-import WalletLedgerEntryFactory from '../../domain/factories/wallet-ledger-entry.factory';
+import type InboxMessageRepositoryInterface from '../../domain/repositories/inbox-message-repository.interface';
 import type WagerTransactionRepositoryInterface from '../../domain/repositories/wager-transaction-repository.interface';
-import type WalletLedgerEntryInterface from '../../domain/repositories/wallet-ledger-entry.interface';
-import type WalletRepositoryInterface from '../../domain/repositories/wallet-repository.interface';
+import { INBOX_MESSAGE_REPOSITORY } from '../../infra/repositories/typeorm/inbox-message.repository';
 import { WAGER_TRANSACTION_REPOSITORY } from '../../infra/repositories/typeorm/wager-transaction.repository';
-import { WALLET_LEDGER_ENTRY_REPOSITORY } from '../../infra/repositories/typeorm/wallet-ledger-entry.repository';
-import { WALLET_REPOSITORY } from '../../infra/repositories/typeorm/wallet.repository';
 import { UnitOfWork } from '../../infra/repositories/unit-of-work';
+import ProcessKindBetUseCase from './process-kind-bet.usecase';
+import ProcessKindLossUseCase from './process-kind-loss.usecase';
 import ProcessKindRefoundUseCase from './process-kind-refound.usecase';
+import ProcessKindRollbackUseCase from './process-kind-rollback.usecase';
+import ProcessKindWinUseCase from './process-kind-win.usecase';
 
 export type ProcessOperationProps = {
   idempotencyKey: string;
   providerId: string;
   externalTransactionId: string;
-  playerId: string; // uuid
-  walletId: string; // uuid
+  playerId: string;
+  walletId: string;
   roundId: string;
   gameId: string;
   kind: string;
@@ -36,6 +35,10 @@ export type ProcessOperationProps = {
     currency: string;
   };
   referenceExternalTransactionId?: string;
+  inbox?: {
+    consumerName: string;
+    messageId: string;
+  };
 };
 
 export type ProcessOperationResult = {
@@ -51,32 +54,26 @@ export default class ProcessOperationUseCase {
     private readonly uow: UnitOfWork,
     @Inject(WAGER_TRANSACTION_REPOSITORY)
     private readonly wagerTransactionRepository: WagerTransactionRepositoryInterface,
-    @Inject(WALLET_REPOSITORY)
-    private readonly walletRepository: WalletRepositoryInterface,
-    @Inject(WALLET_LEDGER_ENTRY_REPOSITORY)
-    private readonly walletLedgerEntryRepository: WalletLedgerEntryInterface,
+    @Inject(INBOX_MESSAGE_REPOSITORY)
+    private readonly inboxMessageRepository: InboxMessageRepositoryInterface,
+    private readonly processKindBetUseCase: ProcessKindBetUseCase,
+    private readonly processKindWinUseCase: ProcessKindWinUseCase,
+    private readonly processKindLossUseCase: ProcessKindLossUseCase,
     private readonly processKindRefoundUseCase: ProcessKindRefoundUseCase,
+    private readonly processKindRollbackUseCase: ProcessKindRollbackUseCase,
   ) {}
 
   async execute(props: ProcessOperationProps): Promise<ProcessOperationResult> {
-    // TODO 01 — Validar a entrada antes de consultar ou alterar o banco:
-    // campos obrigatórios, UUIDs, kind permitido (OPENING é interno),
-    // valor decimal positivo com até duas casas e moeda aceita.
-    // Depois da validação, garantir que o hash use uma representação
-    // canônica dos dados de negócio.
     const payloadHash = this.createPayloadHash(props);
 
     try {
       return await this.uow.execute(async (manager: EntityManager) => {
-        const walletRepository = this.walletRepository.withTransaction(manager);
-        const walletLedgerEntryRepository =
-          this.walletLedgerEntryRepository.withTransaction(manager);
         const wagerTransactionRepository =
           this.wagerTransactionRepository.withTransaction(manager);
-
         const existing = await wagerTransactionRepository.findByIdempotencyKey(
           props.idempotencyKey,
         );
+
         if (existing) {
           return this.toReplayResult(existing, payloadHash);
         }
@@ -95,112 +92,11 @@ export default class ProcessOperationUseCase {
           money: props.money,
           status: WagerTransactionStatus.Pending,
         });
-
-        if (props.kind === WagerTransactionKind.Refund) {
-          return this.processKindRefoundUseCase.execute(
-            props,
-            manager,
-            wagerTransaction,
-          );
-        }
-
         await wagerTransactionRepository.create(wagerTransaction);
 
-        // TODO 02 — Para ROLLBACK, localizar a referência por providerId + ID
-        // externo e consultar se ela já foi revertida por esse tipo.
-        let reference: WagerTransaction | undefined;
-        let referenceAlreadyReversed = false;
-
-        const wallet = await walletRepository.findByIdForUpdate(props.walletId);
-        if (!wallet) {
-          throw new Error(`Wallet not found: ${props.walletId}`);
-        }
-
-        // TODO 03 — Validar que a carteira pertence ao playerId e que sua
-        // moeda corresponde à moeda da operação. Confirmar que a atualização
-        // do saldo fica protegida pelo lock e pela transação SQL.
-        const money = new Money({
-          amount: new Decimal(props.money.amount),
-          currency: props.money.currency,
-        });
-
-        const balanceBefore = wallet.balance;
-        let ledgerDirection: LedgerDirection;
-
-        switch (props.kind) {
-          case WagerTransactionKind.Bet:
-            await this.processKindBetUseCase(
-              money,
-              wallet,
-              wagerTransaction,
-              walletRepository,
-              walletLedgerEntryRepository,
-            );
-            break;
-
-          case WagerTransactionKind.Win:
-            await this.processKindWinUseCase(
-              money,
-              wallet,
-              wagerTransaction,
-              walletRepository,
-              walletLedgerEntryRepository,
-            );
-            break;
-
-          case WagerTransactionKind.Loss:
-            this.processKindLossUseCase(wallet);
-            break;
-
-          case WagerTransactionKind.Rollback:
-            if (!reference) {
-              throw new Error(
-                'TODO: tratar referência ausente como PENDING_REFERENCE',
-              );
-            }
-
-            await this.processKindRollbackUseCase(
-              money,
-              wallet,
-              wagerTransaction,
-              reference,
-              referenceAlreadyReversed,
-              walletRepository,
-              walletLedgerEntryRepository,
-            );
-            break;
-
-          case WagerTransactionKind.Opening:
-          default:
-            throw new Error(`Unsupported transaction kind: ${props.kind}`);
-        }
-
-        // TODO 04 — Tratar erros de negócio dentro desta unidade de trabalho:
-        // saldo insuficiente em BET ou ROLLBACK deve persistir REJECTED,
-        // failureCode estável e saldo observado, sem criar ledger. Distinguir
-        // isso de erro de infraestrutura, que deve provocar rollback.
-
-        // TODO 05 — Serializar valores monetários sempre com duas casas
-        // decimais. Permitir saldo zero, mantendo a validação de que o valor
-        // da operação submetida deve ser positivo.
-
-        // TODO 06 — Gravar eventos de Outbox na mesma transação SQL:
-        // Processed ou Rejected, PendingReference quando aplicável e
-        // WalletBalanceChanged somente quando o saldo mudar.
-        // Para entrada SQS, gravar Inbox por (consumerName, messageId) também
-        // nesta transação. Entrada HTTP não usa Inbox.
-
-        const balanceAfter = this.toBalanceSnapshot(wallet.balance);
-
-        wagerTransaction.markProcessed(balanceAfter);
-        await wagerTransactionRepository.create(wagerTransaction);
-
-        return {
-          transactionId: wagerTransaction.id,
-          status: wagerTransaction.status,
-          balance: balanceAfter,
-          idempotentReplay: false,
-        };
+        const result = await this.dispatch(props, manager, wagerTransaction);
+        await this.recordInbox(manager, props, payloadHash);
+        return result;
       });
     } catch (error) {
       const existing =
@@ -211,6 +107,35 @@ export default class ProcessOperationUseCase {
         throw error;
       }
       return this.toReplayResult(existing, payloadHash);
+    }
+  }
+
+  private async dispatch(
+    props: ProcessOperationProps,
+    manager: EntityManager,
+    transaction: WagerTransaction,
+  ): Promise<ProcessOperationResult> {
+    switch (transaction.kind) {
+      case WagerTransactionKind.Bet:
+        return this.processKindBetUseCase.execute(props, manager, transaction);
+      case WagerTransactionKind.Win:
+        return this.processKindWinUseCase.execute(props, manager, transaction);
+      case WagerTransactionKind.Loss:
+        return this.processKindLossUseCase.execute(props, manager, transaction);
+      case WagerTransactionKind.Refund:
+        return this.processKindRefoundUseCase.execute(
+          props,
+          manager,
+          transaction,
+        );
+      case WagerTransactionKind.Rollback:
+        return this.processKindRollbackUseCase.execute(
+          props,
+          manager,
+          transaction,
+        );
+      default:
+        throw new Error(`Unsupported transaction kind: ${transaction.kind}`);
     }
   }
 
@@ -226,7 +151,8 @@ export default class ProcessOperationUseCase {
 
     if (
       !existing.resultBalance &&
-      existing.status !== WagerTransactionStatus.PendingReference
+      existing.status !== WagerTransactionStatus.PendingReference &&
+      existing.status !== WagerTransactionStatus.Rejected
     ) {
       throw new Error(
         `A transação ${existing.id} não tem o saldo do resultado salvo`,
@@ -246,7 +172,8 @@ export default class ProcessOperationUseCase {
       externalTransactionId: props.externalTransactionId,
       gameId: props.gameId,
       kind: props.kind,
-      referenceExternalTransactionId: props.referenceExternalTransactionId,
+      referenceExternalTransactionId:
+        props.referenceExternalTransactionId ?? null,
       money: {
         amount: props.money.amount,
         currency: props.money.currency,
@@ -262,177 +189,23 @@ export default class ProcessOperationUseCase {
       .digest('hex');
   }
 
-  private toBalanceSnapshot(money: Money): WagerTransactionBalance {
-    return {
-      amount: new Decimal(money.value.amount).toString(),
-      currency: money.value.currency,
-    };
-  }
-
-  private async processKindBetUseCase(
-    money: Money,
-    wallet: WalletAggregate,
-    wagerTransaction: WagerTransaction,
-    walletRepository: WalletRepositoryInterface,
-    walletLedgerEntryRepository: WalletLedgerEntryInterface,
-  ): Promise<WagerTransactionBalance> {
-    const balanceBefore = wallet.balance;
-
-    wallet.debit(money);
-
-    return this.persistWalletEffect(
-      money,
-      wallet,
-      wagerTransaction,
-      balanceBefore,
-      LedgerDirection.Debit,
-      walletRepository,
-      walletLedgerEntryRepository,
-    );
-  }
-
-  private async processKindWinUseCase(
-    money: Money,
-    wallet: WalletAggregate,
-    wagerTransaction: WagerTransaction,
-    walletRepository: WalletRepositoryInterface,
-    walletLedgerEntryRepository: WalletLedgerEntryInterface,
-  ): Promise<WagerTransactionBalance> {
-    const balanceBefore = wallet.balance;
-
-    wallet.credit(money);
-
-    return this.persistWalletEffect(
-      money,
-      wallet,
-      wagerTransaction,
-      balanceBefore,
-      LedgerDirection.Credit,
-      walletRepository,
-      walletLedgerEntryRepository,
-    );
-  }
-
-  private processKindLossUseCase(
-    wallet: WalletAggregate,
-  ): WagerTransactionBalance {
-    return this.toBalanceSnapshot(wallet.balance);
-  }
-
-  private async processKindRollbackUseCase(
-    money: Money,
-    wallet: WalletAggregate,
-    wagerTransaction: WagerTransaction,
-    reference: WagerTransaction,
-    referenceAlreadyReversed: boolean,
-    walletRepository: WalletRepositoryInterface,
-    walletLedgerEntryRepository: WalletLedgerEntryInterface,
-  ): Promise<WagerTransactionBalance> {
-    this.validateReversalReference(
-      wagerTransaction,
-      money,
-      wallet,
-      reference,
-      [
-        WagerTransactionKind.Bet,
-        WagerTransactionKind.Win,
-        WagerTransactionKind.Refund,
-      ],
-      referenceAlreadyReversed,
-    );
-
-    const balanceBefore = wallet.balance;
-
-    if (reference.kind === WagerTransactionKind.Bet) {
-      wallet.credit(money);
-
-      return this.persistWalletEffect(
-        money,
-        wallet,
-        wagerTransaction,
-        balanceBefore,
-        LedgerDirection.Credit,
-        walletRepository,
-        walletLedgerEntryRepository,
-      );
+  private async recordInbox(
+    manager: EntityManager,
+    props: ProcessOperationProps,
+    payloadHash: string,
+  ): Promise<void> {
+    if (isUndefined(props.inbox)) {
+      return;
     }
 
-    wallet.debit(money);
-
-    return this.persistWalletEffect(
-      money,
-      wallet,
-      wagerTransaction,
-      balanceBefore,
-      LedgerDirection.Debit,
-      walletRepository,
-      walletLedgerEntryRepository,
-    );
-  }
-
-  private async persistWalletEffect(
-    money: Money,
-    wallet: WalletAggregate,
-    wagerTransaction: WagerTransaction,
-    balanceBefore: Money,
-    direction: LedgerDirection,
-    walletRepository: WalletRepositoryInterface,
-    walletLedgerEntryRepository: WalletLedgerEntryInterface,
-  ): Promise<WagerTransactionBalance> {
-    const balanceAfter = this.toBalanceSnapshot(wallet.balance);
-
-    await walletRepository.create(wallet);
-    await walletLedgerEntryRepository.create(
-      WalletLedgerEntryFactory.create({
-        walletId: wallet.id,
-        transactionId: wagerTransaction.id,
-        direction,
-        money: {
-          amount: money.value.amount.toFixed(2),
-          currency: money.value.currency,
-        },
-        balanceBefore: this.toBalanceSnapshot(balanceBefore),
-        balanceAfter,
-        createdAt: wagerTransaction.createdAt,
+    await this.inboxMessageRepository.withTransaction(manager).create(
+      InboxMessageFactory.create({
+        consumerName: props.inbox.consumerName,
+        messageId: props.inbox.messageId,
+        payloadHash,
+        receivedAt: new Date(),
+        processedAt: new Date(),
       }),
     );
-
-    return balanceAfter;
-  }
-
-  private validateReversalReference(
-    wagerTransaction: WagerTransaction,
-    money: Money,
-    wallet: WalletAggregate,
-    reference: WagerTransaction,
-    allowedKinds: WagerTransactionKind[],
-    referenceAlreadyReversed: boolean,
-  ): void {
-    if (reference.status !== WagerTransactionStatus.Processed) {
-      throw new Error('A transação referenciada precisa estar processada');
-    }
-
-    if (!allowedKinds.includes(reference.kind)) {
-      throw new Error('Tipo de transação inválido para esta reversão');
-    }
-
-    if (
-      reference.providerId !== wagerTransaction.providerId ||
-      reference.playerId !== wagerTransaction.playerId ||
-      reference.walletId !== wallet.id ||
-      reference.roundId !== wagerTransaction.roundId
-    ) {
-      throw new Error('A referência não pertence ao mesmo contexto');
-    }
-
-    reference.money.assertSameCurrency(money);
-
-    if (!reference.money.value.amount.equals(money.value.amount)) {
-      throw new Error('O valor deve ser igual ao da transação referenciada');
-    }
-
-    if (referenceAlreadyReversed) {
-      throw new Error('A transação referenciada já foi revertida');
-    }
   }
 }

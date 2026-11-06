@@ -1,7 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import ProcessBet from './application/usecases/process-operation.usecase';
+import ProcessKindBetUseCase from './application/usecases/process-kind-bet.usecase';
+import ProcessKindLossUseCase from './application/usecases/process-kind-loss.usecase';
+import ProcessKindRefoundUseCase from './application/usecases/process-kind-refound.usecase';
+import ProcessKindRollbackUseCase from './application/usecases/process-kind-rollback.usecase';
+import ProcessKindWinUseCase from './application/usecases/process-kind-win.usecase';
+import ProcessOperationUseCase from './application/usecases/process-operation.usecase';
 import { InboxMessageModel } from './infra/models/inbox-message.model';
 import { OutboxMessageModel } from './infra/models/outbox-message.model';
 import { WagerTransactionModel } from './infra/models/wager-transaction.model';
@@ -23,12 +28,15 @@ import WalletRepository, {
   WALLET_REPOSITORY,
 } from './infra/repositories/typeorm/wallet.repository';
 import { UnitOfWork } from './infra/repositories/unit-of-work';
-import ProcessKindRefoundUseCase from './application/usecases/process-kind-refound.usecase';
 
 @Module({
   providers: [
     UnitOfWork,
-    ProcessBet,
+    ProcessOperationUseCase,
+    ProcessKindBetUseCase,
+    ProcessKindWinUseCase,
+    ProcessKindLossUseCase,
+    ProcessKindRollbackUseCase,
     ProcessKindRefoundUseCase,
     WagerTransactionRepository,
     InboxMessageRepository,

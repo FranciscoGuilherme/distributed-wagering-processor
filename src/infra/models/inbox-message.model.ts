@@ -1,8 +1,12 @@
 import { Column, Entity, Unique } from 'typeorm';
+import { POSTGRES_CONSTRAINTS } from '../database/postgres-errors';
 import BaseModel from './base.model';
 
 @Entity({ name: 'inbox_messages' })
-@Unique('uq_inbox_messages_consumer_message', ['consumerName', 'messageId'])
+@Unique(POSTGRES_CONSTRAINTS.INBOX_CONSUMER_MESSAGE, [
+  'consumerName',
+  'messageId',
+])
 export class InboxMessageModel extends BaseModel {
   @Column({ type: 'varchar', name: 'consumer_name' })
   declare consumerName: string;

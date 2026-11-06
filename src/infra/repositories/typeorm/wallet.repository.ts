@@ -1,9 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import WalletAlreadyExistsError from '../../../domain/@shared/errors/wallet-already-exists.error';
 import WalletAggregate from '../../../domain/entities/wallet.aggregate';
 import WalletRepositoryInterface from '../../../domain/repositories/wallet-repository.interface';
+import { SYSTEM_MESSAGES } from '../../../shared/constants/system-messages';
+import {
+  isPostgresUniqueConstraintViolation,
+  POSTGRES_CONSTRAINTS,
+} from '../../database/postgres-errors';
 import WalletMapper from '../../mappers/wallet.mapper';
 import WalletModel from '../../models/wallet.model';
 
@@ -49,29 +54,18 @@ export default class WalletRepository implements WalletRepositoryInterface {
     try {
       await this.repository.insert(WalletMapper.toPersistence(wallet));
     } catch (error) {
-      if (!this.isWalletUniqueViolation(error)) {
+      if (
+        !isPostgresUniqueConstraintViolation(
+          error,
+          POSTGRES_CONSTRAINTS.WALLET_PLAYER_CURRENCY,
+        )
+      ) {
         throw error;
       }
 
       throw new WalletAlreadyExistsError(
-        'A wallet for this player and currency already exists',
+        SYSTEM_MESSAGES.PERSISTENCE.WALLET_ALREADY_EXISTS,
       );
     }
-  }
-
-  private isWalletUniqueViolation(error: unknown): boolean {
-    if (!(error instanceof QueryFailedError)) {
-      return false;
-    }
-
-    const driverError = error.driverError as {
-      code?: string;
-      constraint?: string;
-    };
-
-    return (
-      driverError.code === '23505' &&
-      driverError.constraint === 'uq_wallets_player_currency'
-    );
   }
 }

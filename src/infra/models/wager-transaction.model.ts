@@ -1,9 +1,12 @@
 import { Check, Column, Entity, ForeignKey, Index, Unique } from 'typeorm';
+import { POSTGRES_CONSTRAINTS } from '../database/postgres-errors';
 import BaseModel from './base.model';
 import WalletModel from './wallet.model';
 
 @Entity({ name: 'wager_transactions' })
-@Unique('uq_wager_transactions_idempotency_key', ['idempotencyKey'])
+@Unique(POSTGRES_CONSTRAINTS.WAGER_TRANSACTION_IDEMPOTENCY_KEY, [
+  'idempotencyKey',
+])
 @Check(
   'ck_wager_transactions_kind',
   `"kind" IN ('OPENING', 'BET', 'WIN', 'LOSS', 'REFUND', 'ROLLBACK')`,
@@ -35,14 +38,10 @@ import WalletModel from './wallet.model';
   onDelete: 'RESTRICT',
 })
 @Index('ix_wager_transactions_wallet_id', ['walletId'])
-@Index(
-  'uq_wager_transactions_refund_reference',
-  ['referenceTransactionId'],
-  {
-    unique: true,
-    where: `"kind" = 'REFUND' AND "reference_transaction_id" IS NOT NULL`,
-  },
-)
+@Index('uq_wager_transactions_refund_reference', ['referenceTransactionId'], {
+  unique: true,
+  where: `"kind" = 'REFUND' AND "reference_transaction_id" IS NOT NULL`,
+})
 export class WagerTransactionModel extends BaseModel {
   @Column({ type: 'varchar', name: 'provider_id' })
   declare providerId: string;

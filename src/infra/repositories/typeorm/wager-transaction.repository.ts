@@ -1,11 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, QueryFailedError, Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import IdempotencyKeyAlreadyExistsError from '../../../domain/@shared/errors/idempotency-key-already-exists.error';
 import WagerTransaction, {
   WagerTransactionKind,
 } from '../../../domain/entities/wager-transaction.entity';
 import WagerTransactionRepositoryInterface from '../../../domain/repositories/wager-transaction-repository.interface';
+import { SYSTEM_MESSAGES } from '../../../shared/constants/system-messages';
+import {
+  isPostgresUniqueConstraintViolation,
+  POSTGRES_CONSTRAINTS,
+} from '../../database/postgres-errors';
 import WagerTransactionMapper from '../../mappers/wager-transaction.mapper';
 import { WagerTransactionModel } from '../../models/wager-transaction.model';
 
@@ -35,12 +40,17 @@ export default class WagerTransactionRepository implements WagerTransactionRepos
     try {
       await this.repository.save(WagerTransactionMapper.toPersistence(entity));
     } catch (error) {
-      if (!this.isIdempotencyKeyUniqueViolation(error)) {
+      if (
+        !isPostgresUniqueConstraintViolation(
+          error,
+          POSTGRES_CONSTRAINTS.WAGER_TRANSACTION_IDEMPOTENCY_KEY,
+        )
+      ) {
         throw error;
       }
 
       throw new IdempotencyKeyAlreadyExistsError(
-        'A transaction with this idempotency key already exists',
+        SYSTEM_MESSAGES.PERSISTENCE.IDEMPOTENCY_KEY_ALREADY_EXISTS,
       );
     }
   }
@@ -82,21 +92,5 @@ export default class WagerTransactionRepository implements WagerTransactionRepos
       kind: WagerTransactionKind.Rollback,
     });
     return model ? WagerTransactionMapper.toEntity(model) : null;
-  }
-
-  private isIdempotencyKeyUniqueViolation(error: unknown): boolean {
-    if (!(error instanceof QueryFailedError)) {
-      return false;
-    }
-
-    const driverError = error.driverError as {
-      code?: string;
-      constraint?: string;
-    };
-
-    return (
-      driverError.code === '23505' &&
-      driverError.constraint === 'uq_wager_transactions_idempotency_key'
-    );
   }
 }

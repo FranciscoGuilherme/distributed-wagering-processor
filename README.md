@@ -78,9 +78,9 @@ casas; representações como `"25"`, `"25.0"` e `"25.00"` têm hash canônico ig
 
 ### Enviar uma aposta por SQS
 
-Envie um envelope à fila de entrada. `messageId` e `consumerName` fazem parte
-do contrato persistente de Inbox; reutilize os mesmos valores ao redeliver a
-mesma mensagem.
+Envie um envelope à fila de entrada. `messageId` é a identidade estável da
+mensagem no Inbox; o nome do consumer é definido pela aplicação e não deve ser
+incluído no envelope. Reutilize o mesmo `messageId` ao redeliver a mensagem.
 
 ```bash
 docker compose exec localstack awslocal sqs send-message \
@@ -89,7 +89,6 @@ docker compose exec localstack awslocal sqs send-message \
   --message-deduplication-id "message-bet-001" \
   --message-body '{
     "messageId":"message-bet-001",
-    "consumerName":"wager-transaction-consumer",
     "type":"WagerTransactionRequested",
     "occurredAt":"2026-11-06T12:00:00.000Z",
     "data":{
@@ -107,8 +106,8 @@ docker compose exec localstack awslocal sqs send-message \
 ```
 
 Para exercitar redelivery lógica, envie novamente o mesmo envelope e mantenha
-`messageId`/`consumerName`; use outro `--message-deduplication-id` para que o
-FIFO local aceite a segunda entrega. A Inbox reconhece a repetição. Também é
+`messageId`; use outro `--message-deduplication-id` para que o FIFO local aceite
+a segunda entrega. A Inbox reconhece a repetição. Também é
 possível consultar `wagering-events.fifo` para ver eventos publicados depois
 do commit financeiro.
 
@@ -127,7 +126,7 @@ do commit financeiro.
   a mensagem para retry/redrive.
 - O publisher reivindica eventos com `FOR UPDATE SKIP LOCKED` e lease confirmado
   antes da chamada SQS. Publica JSON `{eventId,eventType,aggregateId,occurredAt,
-  version,data}`, marca `publishedAt` após o envio e agenda retry exponencial.
+version,data}`, marca `publishedAt` após o envio e agenda retry exponencial.
   Uma queda entre envio e marcação pode causar duplicata (at-least-once).
 - `OPENING` e o crédito de abertura são gravados junto com a wallet quando o
   saldo inicial é maior que zero; saldo zero cria a wallet sem movimento.

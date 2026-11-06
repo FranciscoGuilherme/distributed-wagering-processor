@@ -2,8 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import InvalidQueueMessageError from '../../domain/@shared/errors/invalid-queue-message.error';
+import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
 import { WagerOperationDto } from '../dtos/wager-operation.dto';
 import ProcessOperationUseCase from '../usecases/process-operation.usecase';
+import { WAGER_TRANSACTION_CONSUMER_NAME } from './sqs.constants';
 
 type RecordValue = Record<string, unknown>;
 
@@ -21,13 +23,13 @@ export default class QueueManagerService {
       envelope.type !== 'WagerTransactionRequested' ||
       typeof envelope.messageId !== 'string' ||
       !envelope.messageId.trim() ||
-      typeof envelope.consumerName !== 'string' ||
-      !envelope.consumerName.trim() ||
       typeof envelope.occurredAt !== 'string' ||
       Number.isNaN(Date.parse(envelope.occurredAt)) ||
       !isRecord(envelope.data)
     ) {
-      throw new InvalidQueueMessageError('Invalid wager queue envelope');
+      throw new InvalidQueueMessageError(
+        SYSTEM_MESSAGES.VALIDATION.INVALID_QUEUE_ENVELOPE,
+      );
     }
 
     const { idempotencyKey, ...businessData } = envelope.data;
@@ -38,7 +40,7 @@ export default class QueueManagerService {
       idempotencyKey.length > 200
     ) {
       throw new InvalidQueueMessageError(
-        'Queue operation requires a valid idempotencyKey',
+        SYSTEM_MESSAGES.VALIDATION.INVALID_QUEUE_IDEMPOTENCY_KEY,
       );
     }
 
@@ -49,7 +51,9 @@ export default class QueueManagerService {
       forbidUnknownValues: true,
     });
     if (validationErrors.length > 0) {
-      throw new InvalidQueueMessageError('Invalid wager operation payload');
+      throw new InvalidQueueMessageError(
+        SYSTEM_MESSAGES.VALIDATION.INVALID_QUEUE_OPERATION_PAYLOAD,
+      );
     }
 
     await this.processOperation.execute({
@@ -67,7 +71,7 @@ export default class QueueManagerService {
       },
       referenceExternalTransactionId: operation.referenceExternalTransactionId,
       inbox: {
-        consumerName: envelope.consumerName,
+        consumerName: WAGER_TRANSACTION_CONSUMER_NAME,
         messageId: envelope.messageId,
       },
     });

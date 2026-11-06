@@ -132,9 +132,14 @@ export default class WagerTransaction extends Entity<WagerTransactionProps> {
     this._processedAt = new Date();
   }
 
-  reject(): void {
+  reject(
+    failureCode?: FailureCode,
+    resultBalance?: WagerTransactionBalance,
+  ): void {
     this.assertNotTerminal();
     this._status = WagerTransactionStatus.Rejected;
+    this._failureCode = failureCode;
+    this._resultBalance = resultBalance;
     this._processedAt = new Date();
   }
 

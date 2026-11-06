@@ -1,279 +1,240 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Distributed Wagering Processor
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+[![Bun](https://img.shields.io/badge/Bun-runtime-black?logo=bun)](https://bun.sh/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue?logo=typescript)](https://www.typescriptlang.org/)
+[![NestJS](https://img.shields.io/badge/NestJS-framework-E0234E?logo=nestjs)](https://nestjs.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql)](https://www.postgresql.org/)
+[![AWS SQS](https://img.shields.io/badge/AWS-SQS-FF9900?logo=amazonsqs)](https://aws.amazon.com/sqs/)
+[![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)](https://docs.docker.com/compose/)
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Serviço de processamento de operações financeiras de apostas com NestJS, TypeScript, PostgreSQL, TypeORM e AWS SQS via LocalStack. O fluxo local demonstra o consumo de uma aposta, a atualização financeira transacional e a publicação de eventos pela Outbox.
 
-## Distributed Wagering Processor
+## Requisitos
 
-Implementação NestJS/TypeORM do desafio Jungle Gaming. As operações financeiras
-usam PostgreSQL; mensagens de entrada e eventos da Outbox usam filas SQS FIFO.
+- Docker Desktop com Docker Compose
+- Cliente PostgreSQL para inspecionar os dados
+- PowerShell ou terminal equivalente
 
-### Subir localmente
+## Iniciar localmente
 
-```bash
-cp .env.sample .env
+Na raiz do projeto, crie `.env` a partir do exemplo, sem sobrescrever um arquivo existente:
+
+```powershell
+if (-not (Test-Path .env)) {
+  Copy-Item .env.sample .env
+}
+```
+
+Suba PostgreSQL e LocalStack:
+
+```powershell
 docker compose up -d postgres localstack
+docker compose ps
+```
+
+Aplique as migrations e inicie a aplicação:
+
+```powershell
 docker compose run --rm app bun run migration:run
-docker compose up -d app
+docker compose up -d --build app
+docker compose ps
 ```
 
-O Compose cria `wager-transactions.fifo`, sua DLQ
-`wager-transactions-dlq.fifo` (redrive padrão após 5 entregas) e
-`wagering-events.fifo`. Para migrar novamente, execute
-`docker compose exec app bun run migration:run`.
+A aplicação inicia o servidor HTTP, o consumidor SQS e o publisher da Outbox conforme as configurações do `.env`. Acompanhe a execução:
 
-### Criar wallet e apostar por HTTP
-
-```bash
-curl -sS http://localhost:3000/wallets \
-  -H 'content-type: application/json' \
-  -d '{
-    "playerId": "0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
-    "initialBalance": { "amount": "100.00", "currency": "BRL" }
-  }'
+```powershell
+docker compose logs -f app
 ```
 
-Use o `id` retornado como `walletId`:
+O Compose cria as filas `wager-transactions.fifo`, `wager-transactions-dlq.fifo` e `wagering-events.fifo`.
 
-```bash
-curl -i http://localhost:3000/wagering/transactions \
-  -H 'content-type: application/json' \
-  -H 'Idempotency-Key: provider-a:transaction-123' \
-  -d '{
-    "providerId": "provider-a",
-    "externalTransactionId": "transaction-123",
-    "playerId": "0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
-    "walletId": "<wallet-id-retornado>",
-    "roundId": "round-987",
-    "gameId": "fortune-chimp",
-    "kind": "BET",
-    "money": { "amount": "25.00", "currency": "BRL" }
-  }'
+## Conexão com o PostgreSQL
+
+Com a configuração padrão do .env.sample:
+
+| Campo   | Valor                |
+| ------- | -------------------- |
+| Host    | localhost            |
+| Porta   | 5432                 |
+| Banco   | distributed_wagering |
+| Usuário | postgres             |
+| Senha   | postgres             |
+
+O app acessa o PostgreSQL pelo serviço `postgres` dentro da rede Docker. Não use `localhost` como `DB_HOST` dentro do container.
+
+## Criar uma carteira
+
+Exemplo HTTP para criar uma carteira com saldo inicial de R$ 100:
+
+```powershell
+$playerId = [guid]::NewGuid().ToString()
+$requestBody = @{
+  playerId = $playerId
+  initialBalance = @{
+    amount = "100.00"
+    currency = "BRL"
+  }
+} | ConvertTo-Json -Depth 6
+
+$wallet = Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://localhost:3000/wallets" `
+  -ContentType "application/json" `
+  -Body $requestBody
+
+$wallet
+$walletId = $wallet.id
 ```
 
-Uma resposta processada contém `transactionId`, `status`, o saldo original
-resultante e `idempotentReplay`. Reenvie o mesmo body e header para receber o
-resultado salvo. Altere um campo de negócio mantendo o header para observar
-`409 IDEMPOTENCY_CONFLICT`; use uma aposta acima do saldo para obter `422` com
-`failureCode` (BN-001). Valor monetário é string decimal positiva, até duas
-casas; representações como `"25"`, `"25.0"` e `"25.00"` têm hash canônico igual.
+Um saldo inicial positivo registra a operação interna `OPENING`, o lançamento de crédito correspondente e eventos na Outbox.
 
-### Enviar uma aposta por SQS
+## Enviar uma aposta à fila de entrada
 
-Envie um envelope à fila de entrada. `messageId` é a identidade estável da
-mensagem no Inbox; o nome do consumer é definido pela aplicação e não deve ser
-incluído no envelope. Reutilize o mesmo `messageId` ao redeliver a mensagem.
+O consumidor espera um envelope `WagerTransactionRequested`. No contrato atual, `idempotencyKey` é enviado em `data` e deve identificar a operação como `providerId:externalTransactionId`.
 
-```bash
-docker compose exec localstack awslocal sqs send-message \
-  --queue-url http://localhost:4566/000000000000/wager-transactions.fifo \
-  --message-group-id "<wallet-id>" \
-  --message-deduplication-id "message-bet-001" \
-  --message-body '{
-    "messageId":"message-bet-001",
-    "type":"WagerTransactionRequested",
-    "occurredAt":"2026-11-06T12:00:00.000Z",
-    "data":{
-      "providerId":"provider-a",
-      "externalTransactionId":"transaction-sqs-001",
-      "idempotencyKey":"provider-a:transaction-sqs-001",
-      "playerId":"0192f28f-5dc0-7d58-bdb2-814ad6a0f4a1",
-      "walletId":"<wallet-id-retornado>",
-      "roundId":"round-988",
-      "gameId":"fortune-chimp",
-      "kind":"BET",
-      "money":{"amount":"10.00","currency":"BRL"}
+```powershell
+$messageId = [guid]::NewGuid().ToString()
+$externalTransactionId = "transaction-$messageId"
+$envelope = @{
+  messageId = $messageId
+  type = "WagerTransactionRequested"
+  occurredAt = [DateTime]::UtcNow.ToString("o")
+  data = @{
+    providerId = "provider-a"
+    externalTransactionId = $externalTransactionId
+    idempotencyKey = "provider-a:$externalTransactionId"
+    playerId = $playerId
+    walletId = $walletId
+    roundId = "round-local-001"
+    gameId = "fortune-chimp"
+    kind = "BET"
+    money = @{
+      amount = "25.00"
+      currency = "BRL"
     }
-  }'
+  }
+}
+$body = $envelope | ConvertTo-Json -Depth 10 -Compress
+
+docker compose exec localstack awslocal sqs send-message `
+  --queue-url "http://localhost:4566/000000000000/wager-transactions.fifo" `
+  --message-group-id $walletId `
+  --message-deduplication-id $messageId `
+  --message-body $body
 ```
 
-Para exercitar redelivery lógica, envie novamente o mesmo envelope e mantenha
-`messageId`; use outro `--message-deduplication-id` para que o FIFO local aceite
-a segunda entrega. A Inbox reconhece a repetição. Também é
-possível consultar `wagering-events.fifo` para ver eventos publicados depois
-do commit financeiro.
+Ao redeliver uma mensagem, preserve `messageId`. A chave de idempotência financeira protege a operação mesmo que outra mensagem carregue outro identificador de transporte.
 
-### Garantias implementadas e limites
+## Acompanhar no banco
 
-- `ProcessOperationUseCase` abre uma transação SQL, consulta Inbox primeiro,
-  aplica idempotência, despacha o kind e grava Inbox antes do commit. O endpoint
-  HTTP não fornece metadados Inbox.
-- `BET` usa lock pessimista na wallet, `Money`/`Decimal`, ledger DEBIT e eventos
-  Outbox na mesma unidade de trabalho. Rejeição por saldo insuficiente tem
-  código BN-001 e não cria ledger.
-- Códigos de rejeição estáveis: BN-001 (saldo insuficiente), BN-002 (contexto ou
-  moeda inválidos), BN-003 (REFUND não permitido) e BN-004 (saldo insuficiente
-  ao reverter).
-- O consumidor só exclui a mensagem depois do retorno do use case; erros deixam
-  a mensagem para retry/redrive.
-- O publisher reivindica eventos com `FOR UPDATE SKIP LOCKED` e lease confirmado
-  antes da chamada SQS. Publica JSON `{eventId,eventType,aggregateId,occurredAt,
-version,data}`, marca `publishedAt` após o envio e agenda retry exponencial.
-  Uma queda entre envio e marcação pode causar duplicata (at-least-once).
-- `OPENING` e o crédito de abertura são gravados junto com a wallet quando o
-  saldo inicial é maior que zero; saldo zero cria a wallet sem movimento.
-- Autenticação, endpoints de consulta/reconciliação e reprocessamento agendado
-  de `PENDING_REFERENCE` não fazem parte deste fluxo demonstrável.
+Para a aposta de R$ 25, consulte:
 
-O hash SHA-256 usa as propriedades de negócio em ordem lexical fixa no
-`ProcessOperationUseCase`; `Idempotency-Key` e metadados de transporte não
-entram no hash. Consulte [.env.sample](./.env.sample) para os parâmetros locais.
+```sql
+SELECT
+  id,
+  player_id,
+  currency,
+  balance_amount,
+  version
+FROM wallets
+ORDER BY created_at DESC;
 
-## Project setup
+SELECT
+  id,
+  provider_id,
+  external_transaction_id,
+  idempotency_key,
+  kind,
+  amount,
+  currency,
+  status,
+  result_balance_amount,
+  result_balance_currency,
+  failure_code
+FROM wager_transactions
+ORDER BY created_at DESC;
 
-```bash
-bun install
+SELECT
+  wallet_id,
+  transaction_id,
+  direction,
+  amount,
+  currency,
+  balance_before_amount,
+  balance_after_amount
+FROM wallet_ledger_entries
+ORDER BY created_at DESC;
+
+SELECT
+  consumer_name,
+  message_id,
+  payload_hash,
+  received_at,
+  processed_at
+FROM inbox_messages
+ORDER BY created_at DESC;
+
+SELECT
+  id,
+  aggregate_id,
+  event_type,
+  attempts,
+  published_at,
+  next_attempt_at,
+  claim_token,
+  claimed_until
+FROM outbox_messages
+ORDER BY created_at DESC;
 ```
 
-## Project setup
+No caminho de sucesso, a aposta fica `PROCESSED`, o saldo passa de `100.00` para `75.00` e o ledger registra um débito de `25.00`. A mensagem de entrada é removida depois do commit.
 
-```bash
-$ bun install
+## Ver a publicação da Outbox
+
+```powershell
+docker compose exec localstack awslocal sqs receive-message `
+  --queue-url "http://localhost:4566/000000000000/wagering-events.fifo" `
+  --max-number-of-messages 10 `
+  --wait-time-seconds 5
 ```
 
-## Compile and run the project
+O publisher reivindica eventos com lease, publica no SQS e marca `published_at` após o envio. `receive-message` torna as mensagens temporariamente invisíveis; não as remove.
 
-```bash
-# development
-$ bun run start
+A entrega é *at-least-once*. Se o processo cair após o envio e antes da marcação, o evento poderá ser publicado novamente. Consumidores devem deduplicar pelo identificador do evento.
 
-# watch mode
-$ bun run start:dev
+## Diagnóstico rápido
 
-# production mode
-$ bun run start:prod
+```powershell
+docker compose ps -a
+docker compose logs --since 10m --tail 200 app
+docker compose logs --since 10m --tail 100 postgres localstack
+docker compose exec localstack awslocal sqs list-queues
 ```
 
-## Run tests
+`docker compose up -d postgres localstack` inicia somente esses serviços, não inicia `app`. Use `docker compose ps -a` para conferir os containers existentes.
 
-```bash
-# unit tests
-$ bun run test
+Se houver falha de publicação, consulte as linhas da Outbox com `published_at` nulo e verifique `attempts`, `next_attempt_at` e `claimed_until` junto com os logs do publisher.
 
-# e2e tests
-$ bun run test:e2e
+## Validação e limites conhecidos
 
-# test coverage
-$ bun run test:cov
+Foi relatada uma execução local manual ponta a ponta: criação de carteira, aposta via SQS, atualização do saldo e ledger, Inbox, Outbox e publicação dos eventos `OPENING` e `BET`. Testes automatizados não foram executados nessa validação.
+
+O fluxo demonstrado é `BET` e abertura da carteira. Autenticação, endpoints de consulta/reconciliação e reprocessamento agendado de `PENDING_REFERENCE` não fazem parte do fluxo local demonstrado.
+
+Para parar os serviços preservando os volumes:
+
+```powershell
+docker compose down
 ```
 
-## Database migrations
+Remover volumes apaga os dados locais do PostgreSQL e do LocalStack.
 
-The application does not run migrations automatically. Apply the schema explicitly
-against the intended local database:
+## Migrations
 
-```bash
-# Inspect migration status
-bun run migration:show
-
-# Apply pending migrations
-bun run migration:run
-
-# Revert the most recently applied migration
-bun run migration:revert
+```powershell
+docker compose run --rm app bun run migration:show
+docker compose run --rm app bun run migration:run
+docker compose run --rm app bun run migration:revert
 ```
 
-Create an empty migration or generate one from model metadata (generation compares
-against the configured database):
-
-```bash
-bun run migration:create src/infra/database/migrations/DescribeChange
-bun run migration:generate src/infra/database/migrations/DescribeChange
-```
-
-The CLI uses `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASS`, and `DB_NAME`, with the
-same local defaults as `.env.sample`. Review generated migrations before applying
-them. The initial schema migration creates the wagering tables; reverting it
-drops those tables, so only revert when that data is disposable.
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ bun install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-To add it to this project, run this and approve the code it prints at [observe.nestjs.com/link](https://observe.nestjs.com/link) - signing up for free if you have no account:
-
-```bash
-$ npx @nestjs/observe link
-```
-
-It installs `@nestjs/observe`, wires it into `AppModule` and `main.ts`, and writes the app key and secret into `.env`, which every `nest start` script (`start`, `start:dev`, `start:debug`) then loads. In production, set `OBSERVE_APP_KEY` and `OBSERVE_APP_SECRET` in the environment instead.
-
-Or do it by hand:
-
-```bash
-$ bun install @nestjs/observe
-```
-
-Then follow the [setup guide](https://docs.nestjs.com/observability/sdk) - it takes a single import and an app key.
-
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Revise o efeito de uma migration antes de aplicá-la ou revertê-la, especialmente em ambientes com dados.

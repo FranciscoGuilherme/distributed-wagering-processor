@@ -1,12 +1,20 @@
+import { SQSClient } from '@aws-sdk/client-sqs';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import CreateWalletUseCase from './application/usecases/create-wallet.usecase';
 import ProcessKindBetUseCase from './application/usecases/process-kind-bet.usecase';
 import ProcessKindLossUseCase from './application/usecases/process-kind-loss.usecase';
 import ProcessKindRefoundUseCase from './application/usecases/process-kind-refound.usecase';
 import ProcessKindRollbackUseCase from './application/usecases/process-kind-rollback.usecase';
 import ProcessKindWinUseCase from './application/usecases/process-kind-win.usecase';
 import ProcessOperationUseCase from './application/usecases/process-operation.usecase';
+import OutboxPublisherWorker from './application/services/outbox-publisher.worker';
+import QueueManagerService from './application/services/queue-manager.service';
+import { SQS_CLIENT } from './application/services/sqs-client';
+import SqsConsumerWorker from './application/services/sqs-consumer.worker';
+import { WageringController } from './infra/controllers/wagering.controller';
+import { WalletsController } from './infra/controllers/wallets.controller';
 import { InboxMessageModel } from './infra/models/inbox-message.model';
 import { OutboxMessageModel } from './infra/models/outbox-message.model';
 import { WagerTransactionModel } from './infra/models/wager-transaction.model';
@@ -30,8 +38,13 @@ import WalletRepository, {
 import { UnitOfWork } from './infra/repositories/unit-of-work';
 
 @Module({
+  controllers: [WageringController, WalletsController],
   providers: [
     UnitOfWork,
+    QueueManagerService,
+    SqsConsumerWorker,
+    OutboxPublisherWorker,
+    CreateWalletUseCase,
     ProcessOperationUseCase,
     ProcessKindBetUseCase,
     ProcessKindWinUseCase,
@@ -62,6 +75,22 @@ import { UnitOfWork } from './infra/repositories/unit-of-work';
     {
       provide: WALLET_REPOSITORY,
       useExisting: WalletRepository,
+    },
+    {
+      provide: SQS_CLIENT,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const accessKeyId = config.get<string>('AWS_ACCESS_KEY_ID');
+        const secretAccessKey = config.get<string>('AWS_SECRET_ACCESS_KEY');
+        return new SQSClient({
+          region: config.get<string>('AWS_REGION') ?? 'us-east-1',
+          endpoint: config.get<string>('SQS_ENDPOINT') || undefined,
+          credentials:
+            accessKeyId && secretAccessKey
+              ? { accessKeyId, secretAccessKey }
+              : undefined,
+        });
+      },
     },
   ],
   imports: [

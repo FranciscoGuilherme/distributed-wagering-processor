@@ -1,4 +1,3 @@
-import type { EntityManager } from 'typeorm';
 import RepositoryInterface from '../@shared/repository.interface';
 import OutboxMessage from '../entities/outbox-message.entity';
 
@@ -13,7 +12,6 @@ export type ClaimedOutboxEvent = {
 };
 
 export default interface OutboxMessageRepositoryInterface extends RepositoryInterface<OutboxMessage> {
-  withTransaction(manager: EntityManager): OutboxMessageRepositoryInterface;
   claimPendingBatch(
     limit: number,
     leaseMs: number,

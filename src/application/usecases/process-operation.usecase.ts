@@ -1,6 +1,5 @@
 import { createHash } from 'crypto';
 import Decimal from 'decimal.js';
-import { EntityManager } from 'typeorm';
 import type { FailureCode } from '../../domain/@shared/constants/failure-codes';
 import IdempotencyConflictError from '../../domain/@shared/errors/idempotency-conflict.error';
 import IdempotencyKeyAlreadyExistsError from '../../domain/@shared/errors/idempotency-key-already-exists.error';
@@ -14,9 +13,9 @@ import WagerTransaction, {
 import InboxMessageFactory from '../../domain/factories/inbox-message.factory';
 import WagerTransactionFactory from '../../domain/factories/wager-transaction.factory';
 import type InboxMessageRepositoryInterface from '../../domain/repositories/inbox-message-repository.interface';
-import type WagerTransactionRepositoryInterface from '../../domain/repositories/wager-transaction-repository.interface';
-import { UnitOfWork } from '../../infra/repositories/unit-of-work';
 import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
+import type { TransactionScope } from '../ports/transaction-scope.interface';
+import type { UnitOfWork } from '../ports/unit-of-work.interface';
 import ProcessKindBetUseCase from './process-kind-bet.usecase';
 import ProcessKindLossUseCase from './process-kind-loss.usecase';
 import ProcessKindRefoundUseCase from './process-kind-refound.usecase';
@@ -57,7 +56,6 @@ export type ProcessOperationOutcome =
 export default class ProcessOperationUseCase {
   constructor(
     private readonly uow: UnitOfWork,
-    private readonly wagerTransactionRepository: WagerTransactionRepositoryInterface,
     private readonly inboxMessageRepository: InboxMessageRepositoryInterface,
     private readonly processKindBetUseCase: ProcessKindBetUseCase,
     private readonly processKindWinUseCase: ProcessKindWinUseCase,
@@ -72,11 +70,9 @@ export default class ProcessOperationUseCase {
     const payloadHash = this.createPayloadHash(props);
 
     try {
-      return await this.uow.execute(async (manager: EntityManager) => {
-        const wagerTransactionRepository =
-          this.wagerTransactionRepository.withTransaction(manager);
-        const inboxRepository =
-          this.inboxMessageRepository.withTransaction(manager);
+      return await this.uow.execute(async (scope: TransactionScope) => {
+        const wagerTransactionRepository = scope.wagerTransactionRepository;
+        const inboxRepository = scope.inboxMessageRepository;
 
         const existingInbox = props.inbox
           ? await inboxRepository.findByConsumerAndMessageId(
@@ -96,7 +92,7 @@ export default class ProcessOperationUseCase {
 
         if (existing) {
           const result = this.toReplayResult(existing, payloadHash);
-          await this.recordInbox(manager, props, payloadHash);
+          await this.recordInbox(scope, props, payloadHash);
           return result;
         }
 
@@ -116,8 +112,8 @@ export default class ProcessOperationUseCase {
         });
         await wagerTransactionRepository.create(wagerTransaction);
 
-        const result = await this.dispatch(props, manager, wagerTransaction);
-        await this.recordInbox(manager, props, payloadHash);
+        const result = await this.dispatch(props, scope, wagerTransaction);
+        await this.recordInbox(scope, props, payloadHash);
         return result;
       });
     } catch (error) {
@@ -138,9 +134,8 @@ export default class ProcessOperationUseCase {
     payloadHash: string,
   ): Promise<ProcessOperationOutcome> {
     try {
-      return await this.uow.execute(async (manager) => {
-        const inboxRepository =
-          this.inboxMessageRepository.withTransaction(manager);
+      return await this.uow.execute(async (scope: TransactionScope) => {
+        const inboxRepository = scope.inboxMessageRepository;
         const existingInbox = props.inbox
           ? await inboxRepository.findByConsumerAndMessageId(
               props.inbox.consumerName,
@@ -152,9 +147,10 @@ export default class ProcessOperationUseCase {
           return { duplicateMessage: true, idempotentReplay: true };
         }
 
-        const existing = await this.wagerTransactionRepository
-          .withTransaction(manager)
-          .findByIdempotencyKey(props.idempotencyKey);
+        const existing =
+          await scope.wagerTransactionRepository.findByIdempotencyKey(
+            props.idempotencyKey,
+          );
         if (!existing) {
           throw new IdempotencyKeyAlreadyExistsError(
             SYSTEM_MESSAGES.PERSISTENCE.CONCURRENT_TRANSACTION_NOT_FOUND,
@@ -162,7 +158,7 @@ export default class ProcessOperationUseCase {
         }
 
         const result = this.toReplayResult(existing, payloadHash);
-        await this.recordInbox(manager, props, payloadHash);
+        await this.recordInbox(scope, props, payloadHash);
         return result;
       });
     } catch (error) {
@@ -210,26 +206,26 @@ export default class ProcessOperationUseCase {
 
   private async dispatch(
     props: ProcessOperationProps,
-    manager: EntityManager,
+    scope: TransactionScope,
     transaction: WagerTransaction,
   ): Promise<ProcessOperationResult> {
     switch (transaction.kind) {
       case WagerTransactionKind.Bet:
-        return this.processKindBetUseCase.execute(props, manager, transaction);
+        return this.processKindBetUseCase.execute(props, scope, transaction);
       case WagerTransactionKind.Win:
-        return this.processKindWinUseCase.execute(props, manager, transaction);
+        return this.processKindWinUseCase.execute(props, scope, transaction);
       case WagerTransactionKind.Loss:
-        return this.processKindLossUseCase.execute(props, manager, transaction);
+        return this.processKindLossUseCase.execute(props, scope, transaction);
       case WagerTransactionKind.Refund:
         return this.processKindRefoundUseCase.execute(
           props,
-          manager,
+          scope,
           transaction,
         );
       case WagerTransactionKind.Rollback:
         return this.processKindRollbackUseCase.execute(
           props,
-          manager,
+          scope,
           transaction,
         );
       default:
@@ -291,7 +287,7 @@ export default class ProcessOperationUseCase {
   }
 
   private async recordInbox(
-    manager: EntityManager,
+    scope: TransactionScope,
     props: ProcessOperationProps,
     payloadHash: string,
   ): Promise<void> {
@@ -299,7 +295,7 @@ export default class ProcessOperationUseCase {
       return;
     }
 
-    await this.inboxMessageRepository.withTransaction(manager).create(
+    await scope.inboxMessageRepository.create(
       InboxMessageFactory.create({
         consumerName: props.inbox.consumerName,
         messageId: props.inbox.messageId,

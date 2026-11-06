@@ -1,15 +1,11 @@
 import Decimal from 'decimal.js';
-import { EntityManager } from 'typeorm';
 import OperationRejectedError from '../../domain/@shared/errors/operation-rejected.error';
 import Money from '../../domain/@shared/value-objects/money.vo';
 import WagerTransaction from '../../domain/entities/wager-transaction.entity';
 import { LedgerDirection } from '../../domain/entities/wallet-ledger-entry.entity';
 import type WalletAggregate from '../../domain/entities/wallet.aggregate';
-import type OutboxMessageRepositoryInterface from '../../domain/repositories/outbox-message-repository.interface';
-import type WagerTransactionRepositoryInterface from '../../domain/repositories/wager-transaction-repository.interface';
-import type WalletLedgerEntryInterface from '../../domain/repositories/wallet-ledger-entry.interface';
-import type WalletRepositoryInterface from '../../domain/repositories/wallet-repository.interface';
 import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
+import type { TransactionScope } from '../ports/transaction-scope.interface';
 import {
   getFailureCode,
   isBusinessRuleError,
@@ -24,25 +20,15 @@ import type {
 } from './process-operation.usecase';
 
 export default class ProcessKindWinUseCase {
-  constructor(
-    private readonly walletRepository: WalletRepositoryInterface,
-    private readonly walletLedgerEntryRepository: WalletLedgerEntryInterface,
-    private readonly wagerTransactionRepository: WagerTransactionRepositoryInterface,
-    private readonly outboxMessageRepository: OutboxMessageRepositoryInterface,
-  ) {}
-
   async execute(
     props: ProcessOperationProps,
-    manager: EntityManager,
+    scope: TransactionScope,
     transaction: WagerTransaction,
   ): Promise<ProcessOperationResult> {
-    const walletRepository = this.walletRepository.withTransaction(manager);
-    const ledgerRepository =
-      this.walletLedgerEntryRepository.withTransaction(manager);
-    const transactionRepository =
-      this.wagerTransactionRepository.withTransaction(manager);
-    const outboxRepository =
-      this.outboxMessageRepository.withTransaction(manager);
+    const walletRepository = scope.walletRepository;
+    const ledgerRepository = scope.walletLedgerEntryRepository;
+    const transactionRepository = scope.wagerTransactionRepository;
+    const outboxRepository = scope.outboxMessageRepository;
     let wallet: WalletAggregate | null = null;
 
     try {

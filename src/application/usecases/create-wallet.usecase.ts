@@ -1,6 +1,5 @@
 import Decimal from 'decimal.js';
 import { createHash, randomUUID } from 'node:crypto';
-import { EntityManager } from 'typeorm';
 import WalletAlreadyExistsError from '../../domain/@shared/errors/wallet-already-exists.error';
 import {
   WagerTransactionKind,
@@ -10,12 +9,9 @@ import { LedgerDirection } from '../../domain/entities/wallet-ledger-entry.entit
 import WagerTransactionFactory from '../../domain/factories/wager-transaction.factory';
 import WalletAggregateFactory from '../../domain/factories/wallet-aggregate.factory';
 import WalletLedgerEntryFactory from '../../domain/factories/wallet-ledger-entry.factory';
-import type OutboxMessageRepositoryInterface from '../../domain/repositories/outbox-message-repository.interface';
-import type WagerTransactionRepositoryInterface from '../../domain/repositories/wager-transaction-repository.interface';
-import type WalletLedgerEntryInterface from '../../domain/repositories/wallet-ledger-entry.interface';
-import type WalletRepositoryInterface from '../../domain/repositories/wallet-repository.interface';
-import { UnitOfWork } from '../../infra/repositories/unit-of-work';
 import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
+import type { TransactionScope } from '../ports/transaction-scope.interface';
+import type { UnitOfWork } from '../ports/unit-of-work.interface';
 import { markProcessed, toBalanceSnapshot } from './process-kind.helpers';
 
 export type CreateWalletProps = {
@@ -27,17 +23,11 @@ export type CreateWalletProps = {
 };
 
 export default class CreateWalletUseCase {
-  constructor(
-    private readonly uow: UnitOfWork,
-    private readonly walletRepository: WalletRepositoryInterface,
-    private readonly wagerTransactionRepository: WagerTransactionRepositoryInterface,
-    private readonly walletLedgerEntryRepository: WalletLedgerEntryInterface,
-    private readonly outboxMessageRepository: OutboxMessageRepositoryInterface,
-  ) {}
+  constructor(private readonly uow: UnitOfWork) {}
 
   execute(props: CreateWalletProps) {
-    return this.uow.execute(async (manager: EntityManager) => {
-      const wallets = this.walletRepository.withTransaction(manager);
+    return this.uow.execute(async (scope: TransactionScope) => {
+      const wallets = scope.walletRepository;
       if (
         await wallets.findByPlayerAndCurrency(
           props.playerId,
@@ -100,12 +90,9 @@ export default class CreateWalletUseCase {
         status: WagerTransactionStatus.Pending,
       });
 
-      const transactionRepository =
-        this.wagerTransactionRepository.withTransaction(manager);
-      const ledgerRepository =
-        this.walletLedgerEntryRepository.withTransaction(manager);
-      const outboxRepository =
-        this.outboxMessageRepository.withTransaction(manager);
+      const transactionRepository = scope.wagerTransactionRepository;
+      const ledgerRepository = scope.walletLedgerEntryRepository;
+      const outboxRepository = scope.outboxMessageRepository;
 
       await transactionRepository.create(transaction);
       await ledgerRepository.create(

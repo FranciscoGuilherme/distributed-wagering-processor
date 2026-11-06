@@ -1,5 +1,4 @@
 import Decimal from 'decimal.js';
-import { EntityManager } from 'typeorm';
 import { FAILURE_CODES } from '../../domain/@shared/constants/failure-codes';
 import OperationRejectedError from '../../domain/@shared/errors/operation-rejected.error';
 import ReferenceTransactionIdMissing from '../../domain/@shared/errors/reference-transaction-id-missing.error';
@@ -11,11 +10,8 @@ import WagerTransaction, {
 import { LedgerDirection } from '../../domain/entities/wallet-ledger-entry.entity';
 import type WalletAggregate from '../../domain/entities/wallet.aggregate';
 import OutboxMessageFactory from '../../domain/factories/outbox-message.factory';
-import type OutboxMessageRepositoryInterface from '../../domain/repositories/outbox-message-repository.interface';
-import type WagerTransactionRepositoryInterface from '../../domain/repositories/wager-transaction-repository.interface';
-import type WalletLedgerEntryInterface from '../../domain/repositories/wallet-ledger-entry.interface';
-import type WalletRepositoryInterface from '../../domain/repositories/wallet-repository.interface';
 import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
+import type { TransactionScope } from '../ports/transaction-scope.interface';
 import {
   getFailureCode,
   isBusinessRuleError,
@@ -30,25 +26,15 @@ import type {
 } from './process-operation.usecase';
 
 export default class ProcessKindRollbackUseCase {
-  constructor(
-    private readonly walletRepository: WalletRepositoryInterface,
-    private readonly walletLedgerEntryRepository: WalletLedgerEntryInterface,
-    private readonly wagerTransactionRepository: WagerTransactionRepositoryInterface,
-    private readonly outboxMessageRepository: OutboxMessageRepositoryInterface,
-  ) {}
-
   async execute(
     props: ProcessOperationProps,
-    manager: EntityManager,
+    scope: TransactionScope,
     transaction: WagerTransaction,
   ): Promise<ProcessOperationResult> {
-    const walletRepository = this.walletRepository.withTransaction(manager);
-    const ledgerRepository =
-      this.walletLedgerEntryRepository.withTransaction(manager);
-    const wagerTransactionRepository =
-      this.wagerTransactionRepository.withTransaction(manager);
-    const outboxRepository =
-      this.outboxMessageRepository.withTransaction(manager);
+    const walletRepository = scope.walletRepository;
+    const ledgerRepository = scope.walletLedgerEntryRepository;
+    const wagerTransactionRepository = scope.wagerTransactionRepository;
+    const outboxRepository = scope.outboxMessageRepository;
 
     if (!props.referenceExternalTransactionId) {
       throw new ReferenceTransactionIdMissing(

@@ -1,11 +1,8 @@
-import { EntityManager } from 'typeorm';
 import OperationRejectedError from '../../domain/@shared/errors/operation-rejected.error';
 import WagerTransaction from '../../domain/entities/wager-transaction.entity';
 import type WalletAggregate from '../../domain/entities/wallet.aggregate';
-import type OutboxMessageRepositoryInterface from '../../domain/repositories/outbox-message-repository.interface';
-import type WagerTransactionRepositoryInterface from '../../domain/repositories/wager-transaction-repository.interface';
-import type WalletRepositoryInterface from '../../domain/repositories/wallet-repository.interface';
 import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
+import type { TransactionScope } from '../ports/transaction-scope.interface';
 import {
   getFailureCode,
   isBusinessRuleError,
@@ -19,22 +16,14 @@ import type {
 } from './process-operation.usecase';
 
 export default class ProcessKindLossUseCase {
-  constructor(
-    private readonly walletRepository: WalletRepositoryInterface,
-    private readonly wagerTransactionRepository: WagerTransactionRepositoryInterface,
-    private readonly outboxMessageRepository: OutboxMessageRepositoryInterface,
-  ) {}
-
   async execute(
     _props: ProcessOperationProps,
-    manager: EntityManager,
+    scope: TransactionScope,
     transaction: WagerTransaction,
   ): Promise<ProcessOperationResult> {
-    const walletRepository = this.walletRepository.withTransaction(manager);
-    const transactionRepository =
-      this.wagerTransactionRepository.withTransaction(manager);
-    const outboxRepository =
-      this.outboxMessageRepository.withTransaction(manager);
+    const walletRepository = scope.walletRepository;
+    const transactionRepository = scope.wagerTransactionRepository;
+    const outboxRepository = scope.outboxMessageRepository;
     let wallet: WalletAggregate | null = null;
 
     try {

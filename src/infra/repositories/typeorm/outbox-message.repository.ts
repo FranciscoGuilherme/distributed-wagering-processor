@@ -35,27 +35,37 @@ export default class OutboxMessageRepository implements OutboxMessageRepositoryI
     return this.repository.manager.transaction(async (manager) => {
       const rows = (await manager.query(
         `WITH candidates AS (
-           SELECT id
-           FROM outbox_messages
-           WHERE published_at IS NULL
-             AND (next_attempt_at IS NULL OR next_attempt_at <= NOW())
-             AND (claimed_until IS NULL OR claimed_until <= NOW())
-           ORDER BY occurred_at, id
-           LIMIT $1
-           FOR UPDATE SKIP LOCKED
-         ),
-         claimed AS (
-           UPDATE outbox_messages AS outbox
-           SET claim_token = $2,
-             claimed_until = NOW() + ($3::int * INTERVAL '1 millisecond')
-           FROM candidates
-           WHERE outbox.id = candidates.id
-           RETURNING outbox.id, outbox.aggregate_id AS "aggregateId",
-                   outbox.event_type AS "eventType", outbox.payload,
-                   outbox.occurred_at AS "occurredAt", outbox.attempts
-         )
-         SELECT id, "aggregateId", "eventType", payload, "occurredAt", attempts
-         FROM claimed`,
+          SELECT id
+          FROM outbox_messages
+          WHERE published_at IS NULL
+            AND (next_attempt_at IS NULL OR next_attempt_at <= NOW())
+            AND (claimed_until IS NULL OR claimed_until <= NOW())
+          ORDER BY occurred_at, id
+          LIMIT $1
+          FOR UPDATE SKIP LOCKED
+        ),
+        claimed AS (
+          UPDATE outbox_messages AS outbox SET
+            claim_token = $2,
+            claimed_until = NOW() + ($3::int * INTERVAL '1 millisecond')
+          FROM candidates
+          WHERE outbox.id = candidates.id
+          RETURNING
+            outbox.id,
+            outbox.aggregate_id AS "aggregateId",
+            outbox.event_type AS "eventType",
+            outbox.payload,
+            outbox.occurred_at AS "occurredAt",
+            outbox.attempts
+        )
+        SELECT
+          id,
+          "aggregateId",
+          "eventType",
+          payload,
+          "occurredAt",
+          attempts
+        FROM claimed`,
         [limit, claimToken, leaseMs],
       )) as Array<Omit<ClaimedOutboxEvent, 'claimToken'>>;
 
@@ -64,12 +74,18 @@ export default class OutboxMessageRepository implements OutboxMessageRepositoryI
   }
 
   async markPublished(id: string, claimToken: string): Promise<void> {
-    await this.repository.manager.query(
-      `UPDATE outbox_messages
-       SET published_at = NOW(), claim_token = NULL, claimed_until = NULL
-       WHERE id = $1 AND claim_token = $2 AND published_at IS NULL`,
-      [id, claimToken],
-    );
+    await this.repository
+      .createQueryBuilder()
+      .update(OutboxMessageModel)
+      .set({
+        publishedAt: () => 'NOW()',
+        claimToken: null,
+        claimedUntil: null,
+      })
+      .where('id = :id', { id })
+      .andWhere('claimToken = :claimToken', { claimToken })
+      .andWhere('publishedAt IS NULL')
+      .execute();
   }
 
   async scheduleRetry(
@@ -77,12 +93,18 @@ export default class OutboxMessageRepository implements OutboxMessageRepositoryI
     claimToken: string,
     nextAttemptAt: Date,
   ): Promise<void> {
-    await this.repository.manager.query(
-      `UPDATE outbox_messages
-       SET attempts = attempts + 1, next_attempt_at = $3,
-           claim_token = NULL, claimed_until = NULL
-       WHERE id = $1 AND claim_token = $2 AND published_at IS NULL`,
-      [id, claimToken, nextAttemptAt],
-    );
+    await this.repository
+      .createQueryBuilder()
+      .update(OutboxMessageModel)
+      .set({
+        attempts: () => 'attempts + 1',
+        nextAttemptAt,
+        claimToken: null,
+        claimedUntil: null,
+      })
+      .where('id = :id', { id })
+      .andWhere('claimToken = :claimToken', { claimToken })
+      .andWhere('publishedAt IS NULL')
+      .execute();
   }
 }

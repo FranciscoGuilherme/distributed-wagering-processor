@@ -11,6 +11,7 @@ import type { Response } from 'express';
 import { WagerOperationDto } from '../../application/dtos/wager-operation.dto';
 import ProcessOperationUseCase from '../../application/usecases/process-operation.usecase';
 import { WagerTransactionStatus } from '../../domain/entities/wager-transaction.entity';
+import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
 
 @Controller('wagering/transactions')
 export class WageringController {
@@ -32,8 +33,7 @@ export class WageringController {
       return {
         statusCode: HttpStatus.BAD_REQUEST,
         code: 'INVALID_IDEMPOTENCY_KEY',
-        message:
-          'O header Idempotency-Key é obrigatório e deve ter até 200 caracteres',
+        message: SYSTEM_MESSAGES.HTTP.IDEMPOTENCY_KEY_REQUIRED,
       };
     }
 

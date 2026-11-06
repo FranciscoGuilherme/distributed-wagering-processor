@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import InvalidQueueMessageError from '../../domain/@shared/errors/invalid-queue-message.error';
+import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
 import QueueManagerService from './queue-manager.service';
 import { SQS_CLIENT } from './sqs-client';
 
@@ -35,9 +36,7 @@ export default class SqsConsumerWorker
       return;
     }
     if (!this.config.get<string>('SQS_OPERATION_QUEUE_URL')) {
-      throw new Error(
-        'SQS_OPERATION_QUEUE_URL is required when the SQS consumer is enabled',
-      );
+      throw new Error(SYSTEM_MESSAGES.SQS.OPERATION_QUEUE_URL_REQUIRED);
     }
     this.readInteger('SQS_LONG_POLL_SECONDS', 20, 0, 20);
     this.readInteger('SQS_VISIBILITY_TIMEOUT_SECONDS', 60, 1, 43200);
@@ -72,10 +71,8 @@ export default class SqsConsumerWorker
           }),
         );
         messages = response.Messages ?? [];
-      } catch (error) {
-        this.logger.error(
-          `SQS receive failed; polling will resume: ${this.errorMessage(error)}`,
-        );
+      } catch {
+        this.logger.error(SYSTEM_MESSAGES.SQS.RECEIVE_FAILED);
         await this.pause(1000);
         continue;
       }
@@ -88,9 +85,7 @@ export default class SqsConsumerWorker
       const receiptHandle = message.ReceiptHandle;
       const body = message.Body;
       if (!receiptHandle || !body) {
-        this.logger.warn(
-          'SQS returned a message without body or receipt handle',
-        );
+        this.logger.warn(SYSTEM_MESSAGES.SQS.MESSAGE_MISSING_BODY_OR_RECEIPT);
         continue;
       }
 
@@ -99,7 +94,9 @@ export default class SqsConsumerWorker
         try {
           envelope = JSON.parse(body) as unknown;
         } catch {
-          throw new InvalidQueueMessageError('Queue message body is not JSON');
+          throw new InvalidQueueMessageError(
+            SYSTEM_MESSAGES.SQS.MESSAGE_BODY_NOT_JSON,
+          );
         }
 
         await this.queueManager.processQueueMessage(envelope);
@@ -110,9 +107,7 @@ export default class SqsConsumerWorker
           }),
         );
       } catch (error) {
-        this.logger.warn(
-          `SQS message was not acknowledged: ${this.errorMessage(error)}`,
-        );
+        this.logger.warn(SYSTEM_MESSAGES.SQS.MESSAGE_NOT_ACKNOWLEDGED);
         if (!(error instanceof InvalidQueueMessageError)) {
           await this.deferRetry(
             queueUrl,
@@ -138,10 +133,8 @@ export default class SqsConsumerWorker
           VisibilityTimeout: delay,
         }),
       );
-    } catch (error) {
-      this.logger.error(
-        `Could not extend SQS retry visibility: ${this.errorMessage(error)}`,
-      );
+    } catch {
+      this.logger.error(SYSTEM_MESSAGES.SQS.DEFER_RETRY_FAILED);
     }
   }
 
@@ -153,18 +146,12 @@ export default class SqsConsumerWorker
   ): number {
     const value = Number(this.config.get(key) ?? fallback);
     if (!Number.isInteger(value) || value < minimum || value > maximum) {
-      throw new Error(
-        `${key} must be an integer between ${minimum} and ${maximum}`,
-      );
+      throw new Error(SYSTEM_MESSAGES.SQS.INVALID_INTEGER_CONFIGURATION);
     }
     return value;
   }
 
   private async pause(milliseconds: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, milliseconds));
-  }
-
-  private errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : 'unknown error';
   }
 }

@@ -14,6 +14,7 @@ import { OUTBOX_MESSAGE_REPOSITORY } from '../../infra/repositories/typeorm/outb
 import { WAGER_TRANSACTION_REPOSITORY } from '../../infra/repositories/typeorm/wager-transaction.repository';
 import { WALLET_LEDGER_ENTRY_REPOSITORY } from '../../infra/repositories/typeorm/wallet-ledger-entry.repository';
 import { WALLET_REPOSITORY } from '../../infra/repositories/typeorm/wallet.repository';
+import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
 import {
   getFailureCode,
   isBusinessRuleError,
@@ -57,7 +58,9 @@ export default class ProcessKindBetUseCase {
     try {
       wallet = await walletRepository.findByIdForUpdate(transaction.walletId);
       if (!wallet) {
-        throw new OperationRejectedError('Wallet not found');
+        throw new OperationRejectedError(
+          SYSTEM_MESSAGES.APPLICATION.WALLET_NOT_FOUND,
+        );
       }
       if (
         wallet.playerId !== transaction.playerId ||
@@ -65,7 +68,7 @@ export default class ProcessKindBetUseCase {
         wallet.balance.value.currency !== transaction.money.value.currency
       ) {
         throw new OperationRejectedError(
-          'The wallet owner or currency does not match the operation',
+          SYSTEM_MESSAGES.APPLICATION.WALLET_CONTEXT_MISMATCH,
         );
       }
 

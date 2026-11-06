@@ -19,6 +19,7 @@ import { OUTBOX_MESSAGE_REPOSITORY } from '../../infra/repositories/typeorm/outb
 import { WAGER_TRANSACTION_REPOSITORY } from '../../infra/repositories/typeorm/wager-transaction.repository';
 import { WALLET_LEDGER_ENTRY_REPOSITORY } from '../../infra/repositories/typeorm/wallet-ledger-entry.repository';
 import { WALLET_REPOSITORY } from '../../infra/repositories/typeorm/wallet.repository';
+import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
 import {
   getFailureCode,
   isBusinessRuleError,
@@ -60,7 +61,7 @@ export default class ProcessKindRefoundUseCase {
 
     if (!props.referenceExternalTransactionId) {
       throw new ReferenceTransactionIdMissing(
-        'referenceExternalTransactionId not found',
+        SYSTEM_MESSAGES.APPLICATION.REFERENCE_TRANSACTION_ID_REQUIRED,
       );
     }
 
@@ -99,11 +100,13 @@ export default class ProcessKindRefoundUseCase {
     try {
       wallet = await walletRepository.findByIdForUpdate(transaction.walletId);
       if (!wallet) {
-        throw new OperationRejectedError('Wallet not found');
+        throw new OperationRejectedError(
+          SYSTEM_MESSAGES.APPLICATION.WALLET_NOT_FOUND,
+        );
       }
       if (!reference.isAllowedToRefound()) {
         throw new RefoundNotAllowedError(
-          'Only a processed BET can be refunded',
+          SYSTEM_MESSAGES.APPLICATION.REFUND_BET_NOT_ALLOWED,
         );
       }
       if (
@@ -115,7 +118,7 @@ export default class ProcessKindRefoundUseCase {
         !reference.money.value.amount.equals(transaction.money.value.amount)
       ) {
         throw new RefoundNotAllowedError(
-          'The refund must match the referenced BET context and amount',
+          SYSTEM_MESSAGES.APPLICATION.REFUND_REFERENCE_MISMATCH,
         );
       }
       if (
@@ -124,7 +127,7 @@ export default class ProcessKindRefoundUseCase {
         wallet.balance.value.currency !== transaction.money.value.currency
       ) {
         throw new RefoundNotAllowedError(
-          'The wallet owner or currency does not match the refund',
+          SYSTEM_MESSAGES.APPLICATION.REFUND_WALLET_CONTEXT_MISMATCH,
         );
       }
       const existingRefund =
@@ -133,7 +136,7 @@ export default class ProcessKindRefoundUseCase {
         );
       if (existingRefund) {
         throw new RefoundNotAllowedError(
-          'The referenced BET has already been refunded',
+          SYSTEM_MESSAGES.APPLICATION.REFUND_ALREADY_APPLIED,
         );
       }
 

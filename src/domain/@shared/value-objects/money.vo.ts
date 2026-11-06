@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import { SYSTEM_MESSAGES } from '../../../shared/constants/system-messages';
 import MoneyCurrencyError from '../errors/money-currency.error';
 import { ValueObject } from './value-object';
 
@@ -15,21 +16,19 @@ export default class Money extends ValueObject<MoneyProps> {
 
   validate(): void {
     if (this.value.amount.isNaN()) {
-      throw new Error('Amount must be a valid decimal number');
+      throw new Error(SYSTEM_MESSAGES.DOMAIN.INVALID_DECIMAL_AMOUNT);
     }
     if (this.value.amount.isNegative()) {
-      throw new Error('Amount cannot be negative');
+      throw new Error(SYSTEM_MESSAGES.DOMAIN.NEGATIVE_AMOUNT);
     }
     if (!this.value.currency || this.value.currency.length !== 3) {
-      throw new Error('Currency must be a valid ISO-4217 code');
+      throw new Error(SYSTEM_MESSAGES.DOMAIN.INVALID_CURRENCY);
     }
   }
 
   assertSameCurrency(other: Money): void {
     if (this.value.currency !== other.value.currency) {
-      throw new MoneyCurrencyError(
-        'Cannot operate on Money values with different currencies',
-      );
+      throw new MoneyCurrencyError(SYSTEM_MESSAGES.DOMAIN.CURRENCY_MISMATCH);
     }
   }
 }

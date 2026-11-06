@@ -20,6 +20,7 @@ import { WAGER_TRANSACTION_REPOSITORY } from '../../infra/repositories/typeorm/w
 import { WALLET_LEDGER_ENTRY_REPOSITORY } from '../../infra/repositories/typeorm/wallet-ledger-entry.repository';
 import { WALLET_REPOSITORY } from '../../infra/repositories/typeorm/wallet.repository';
 import { UnitOfWork } from '../../infra/repositories/unit-of-work';
+import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
 import { markProcessed, toBalanceSnapshot } from './process-kind.helpers';
 
 export type CreateWalletProps = {
@@ -54,7 +55,7 @@ export default class CreateWalletUseCase {
         )
       ) {
         throw new WalletAlreadyExistsError(
-          'A wallet for this player and currency already exists',
+          SYSTEM_MESSAGES.PERSISTENCE.WALLET_ALREADY_EXISTS,
         );
       }
 

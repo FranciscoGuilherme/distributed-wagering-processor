@@ -9,6 +9,7 @@ import type { Response } from 'express';
 import { QueryFailedError } from 'typeorm';
 import IdempotencyConflictError from '../../domain/@shared/errors/idempotency-conflict.error';
 import WalletAlreadyExistsError from '../../domain/@shared/errors/wallet-already-exists.error';
+import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -24,7 +25,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       response.status(HttpStatus.CONFLICT).json({
         statusCode: HttpStatus.CONFLICT,
         code: 'IDEMPOTENCY_CONFLICT',
-        message: 'A Idempotency-Key já foi usada com outro payload',
+        message: SYSTEM_MESSAGES.HTTP.IDEMPOTENCY_CONFLICT,
       });
       return;
     }
@@ -33,7 +34,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       response.status(HttpStatus.CONFLICT).json({
         statusCode: HttpStatus.CONFLICT,
         code: 'WALLET_ALREADY_EXISTS',
-        message: 'Já existe uma wallet para este player e moeda',
+        message: SYSTEM_MESSAGES.PERSISTENCE.WALLET_ALREADY_EXISTS,
       });
       return;
     }
@@ -52,7 +53,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       response.status(HttpStatus.SERVICE_UNAVAILABLE).json({
         statusCode: HttpStatus.SERVICE_UNAVAILABLE,
         code: 'PERSISTENCE_UNAVAILABLE',
-        message: 'Falha transitória de persistência; tente novamente',
+        message: SYSTEM_MESSAGES.HTTP.PERSISTENCE_UNAVAILABLE,
       });
       return;
     }
@@ -60,7 +61,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       code: 'INTERNAL_ERROR',
-      message: 'Erro interno',
+      message: SYSTEM_MESSAGES.HTTP.INTERNAL_ERROR,
     });
   }
 }

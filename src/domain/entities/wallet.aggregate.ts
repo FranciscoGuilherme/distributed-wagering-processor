@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
 import { AggregateRoot } from '../@shared/aggregate-root';
 import BalanceError from '../@shared/errors/balance.error';
 import Money from '../@shared/value-objects/money.vo';
@@ -61,7 +62,7 @@ export default class WalletAggregate extends AggregateRoot<WalletProps> {
     this.assertSameCurrency(money);
     const newAmount = this._balance.value.amount.minus(money.value.amount);
     if (newAmount.isNegative()) {
-      throw new BalanceError('Insufficient balance');
+      throw new BalanceError(SYSTEM_MESSAGES.DOMAIN.INSUFFICIENT_BALANCE);
     }
     this.financialOperations(newAmount);
   }
@@ -69,7 +70,7 @@ export default class WalletAggregate extends AggregateRoot<WalletProps> {
   credit(money: Money): void {
     this.assertSameCurrency(money);
     if (money.value.amount.isNegative()) {
-      throw new BalanceError('Cannot credit a negative amount');
+      throw new BalanceError(SYSTEM_MESSAGES.DOMAIN.NEGATIVE_CREDIT);
     }
     const newAmount = this._balance.value.amount.plus(money.value.amount);
     this.financialOperations(newAmount);

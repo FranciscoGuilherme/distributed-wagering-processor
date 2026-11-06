@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { SYSTEM_MESSAGES } from './shared/constants/system-messages';
 
 @Injectable()
 export class AppService {
   getHello(): string {
-    return 'Hello World!';
+    return SYSTEM_MESSAGES.HTTP.HELLO_WORLD;
   }
 }

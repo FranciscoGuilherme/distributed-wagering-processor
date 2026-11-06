@@ -9,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type OutboxMessageRepositoryInterface from '../../domain/repositories/outbox-message-repository.interface';
 import { OUTBOX_MESSAGE_REPOSITORY } from '../../infra/repositories/typeorm/outbox-message.repository';
+import { SYSTEM_MESSAGES } from '../../shared/constants/system-messages';
 import { SQS_CLIENT } from './sqs-client';
 
 @Injectable()
@@ -31,9 +32,7 @@ export default class OutboxPublisherWorker
       return;
     }
     if (!this.config.get<string>('SQS_OUTBOX_QUEUE_URL')) {
-      throw new Error(
-        'SQS_OUTBOX_QUEUE_URL is required when the outbox publisher is enabled',
-      );
+      throw new Error(SYSTEM_MESSAGES.SQS.OUTBOX_QUEUE_URL_REQUIRED);
     }
     this.readInteger('OUTBOX_BATCH_SIZE', 10, 1, 10);
     this.readInteger('OUTBOX_CLAIM_LEASE_MS', 60000, 1000, 900000);
@@ -48,7 +47,12 @@ export default class OutboxPublisherWorker
   private async publishPending(): Promise<void> {
     const queueUrl = this.config.getOrThrow<string>('SQS_OUTBOX_QUEUE_URL');
     const batchSize = this.readInteger('OUTBOX_BATCH_SIZE', 10, 1, 10);
-    const leaseMs = this.readInteger('OUTBOX_CLAIM_LEASE_MS', 60000, 1000, 900000);
+    const leaseMs = this.readInteger(
+      'OUTBOX_CLAIM_LEASE_MS',
+      60000,
+      1000,
+      900000,
+    );
 
     while (!this.stopping) {
       try {
@@ -76,28 +80,27 @@ export default class OutboxPublisherWorker
               }),
             );
             await this.outbox.markPublished(event.id, event.claimToken);
-          } catch (error) {
-            const retrySeconds = Math.min(2 ** Math.min(event.attempts, 8), 300);
+          } catch {
+            const retrySeconds = Math.min(
+              2 ** Math.min(event.attempts, 8),
+              300,
+            );
             await this.outbox
               .scheduleRetry(
                 event.id,
                 event.claimToken,
                 new Date(Date.now() + retrySeconds * 1000),
               )
-              .catch((retryError: unknown) => {
+              .catch(() => {
                 this.logger.error(
-                  `Could not schedule outbox retry for ${event.id}: ${this.errorMessage(retryError)}`,
+                  SYSTEM_MESSAGES.OUTBOX.RETRY_SCHEDULING_FAILED,
                 );
               });
-            this.logger.error(
-              `Outbox event ${event.id} remains pending: ${this.errorMessage(error)}`,
-            );
+            this.logger.error(SYSTEM_MESSAGES.OUTBOX.EVENT_REMAINS_PENDING);
           }
         }
-      } catch (error) {
-        this.logger.error(
-          `Outbox polling failed; the lease will permit recovery: ${this.errorMessage(error)}`,
-        );
+      } catch {
+        this.logger.error(SYSTEM_MESSAGES.OUTBOX.POLLING_FAILED);
         await this.pause(1000);
       }
     }
@@ -111,16 +114,12 @@ export default class OutboxPublisherWorker
   ): number {
     const value = Number(this.config.get(key) ?? fallback);
     if (!Number.isInteger(value) || value < minimum || value > maximum) {
-      throw new Error(`${key} must be an integer between ${minimum} and ${maximum}`);
+      throw new Error(SYSTEM_MESSAGES.OUTBOX.INVALID_INTEGER_CONFIGURATION);
     }
     return value;
   }
 
   private async pause(milliseconds: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, milliseconds));
-  }
-
-  private errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : 'unknown error';
   }
 }

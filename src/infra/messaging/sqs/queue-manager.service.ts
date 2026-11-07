@@ -12,7 +12,6 @@ export default class QueueManagerService {
 
   async processQueueMessage(requestData: unknown): Promise<void> {
     const envelope = this.getEnvelopRequest(requestData);
-    const idempotencyKey = this.buildIdempotencyKey(envelope);
     const validationErrors = validateSync(envelope.data, {
       whitelist: true,
       forbidNonWhitelisted: true,
@@ -25,7 +24,7 @@ export default class QueueManagerService {
     }
 
     await this.processOperation.execute({
-      idempotencyKey,
+      idempotencyKey: envelope.data.idempotencyKey,
       providerId: envelope.data.providerId,
       externalTransactionId: envelope.data.externalTransactionId,
       playerId: envelope.data.playerId,
@@ -67,9 +66,5 @@ export default class QueueManagerService {
     }
 
     return dto;
-  }
-
-  private buildIdempotencyKey(envelope: WagerTransactionEnvelopeDto): string {
-    return envelope.data.providerId + ':' + envelope.data.externalTransactionId;
   }
 }

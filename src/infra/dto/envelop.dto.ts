@@ -7,7 +7,7 @@ import {
   Matches,
   ValidateNested,
 } from 'class-validator';
-import { WagerOperationDto } from '../../application/dtos/wager-operation.dto';
+import { WagerTransactionOperationDto } from './wager-transaction-operation.dto';
 
 export class WagerTransactionEnvelopeDto {
   @Equals('WagerTransactionRequested')
@@ -29,6 +29,6 @@ export class WagerTransactionEnvelopeDto {
   @IsDefined()
   @IsObject()
   @ValidateNested()
-  @Type(() => WagerOperationDto)
-  data!: WagerOperationDto;
+  @Type(() => WagerTransactionOperationDto)
+  data!: WagerTransactionOperationDto;
 }

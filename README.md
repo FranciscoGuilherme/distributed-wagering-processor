@@ -217,7 +217,7 @@ Se houver falha de publicação, consulte as linhas da Outbox com `published_at`
 
 ## Validação e limites conhecidos
 
-Foi relatada uma execução local manual ponta a ponta: criação de carteira, aposta via SQS, atualização do saldo e ledger, Inbox, Outbox e publicação dos eventos `OPENING` e `BET`. Testes automatizados não foram executados nessa validação.
+Foi relatada uma execução local manual ponta a ponta: criação de carteira, operação do kind `OPENING`, aposta do kind `BET`, atualização do saldo e ledger, Inbox, Outbox e publicação dos event types `WagerTransactionProcessed` e `WalletBalanceChanged`. Testes automatizados não foram executados nessa validação.
 
 O fluxo demonstrado é `BET` e abertura da carteira. Autenticação, endpoints de consulta/reconciliação e reprocessamento agendado de `PENDING_REFERENCE` não fazem parte do fluxo local demonstrado.
 

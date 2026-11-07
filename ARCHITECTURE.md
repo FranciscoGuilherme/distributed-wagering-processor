@@ -20,9 +20,9 @@ O EntityManager é restrito à infraestrutura. TypeOrmUnitOfWork abre a transaç
 
 ## Processamento e idempotência
 
-HTTP e SQS validam seus respectivos contratos e encaminham a operação para ProcessOperationUseCase.
+HTTP e SQS validam seus respectivos contratos e encaminham a operação para ProcessOperationUseCase. No envelope SQS, `data` instancia o DTO específico de fila, que aceita e valida `idempotencyKey` junto aos campos da operação; o DTO HTTP não declara essa propriedade.
 
-A idempotência da operação financeira usa idempotencyKey — por padrão, providerId:externalTransactionId — e payloadHash. A mesma chave e o mesmo conteúdo são tratados como replay; a mesma chave com conteúdo diferente é conflito.
+A idempotência da operação financeira usa a `idempotencyKey` recebida no header HTTP ou em `data` no envelope SQS, além de `payloadHash`. O hash representa apenas o conteúdo de negócio, sem a chave ou metadados de transporte. A mesma chave e o mesmo conteúdo são tratados como replay; a mesma chave com conteúdo diferente é conflito.
 
 Para SQS, Inbox registra consumerName e messageId. Ela detecta redelivery da mesma mensagem; não substitui a idempotência financeira, que também protege operações recebidas por outro messageId ou por HTTP.
 

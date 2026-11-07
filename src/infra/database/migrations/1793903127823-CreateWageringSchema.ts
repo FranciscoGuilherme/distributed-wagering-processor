@@ -67,6 +67,11 @@ export class CreateWageringSchema1793903127823 implements MigrationInterface {
       CREATE INDEX "ix_wager_transactions_wallet_id"
       ON "wager_transactions" ("wallet_id")
     `);
+    await queryRunner.query(`
+      CREATE UNIQUE INDEX "uq_wager_transactions_refund_reference"
+      ON "wager_transactions" ("reference_transaction_id")
+      WHERE "kind" = 'REFUND' AND "reference_transaction_id" IS NOT NULL
+    `);
 
     await queryRunner.query(`
       CREATE TABLE "wallet_ledger_entries" (
@@ -130,6 +135,8 @@ export class CreateWageringSchema1793903127823 implements MigrationInterface {
         "attempts" integer NOT NULL,
         "next_attempt_at" timestamptz,
         "published_at" timestamptz,
+        "claim_token" uuid,
+        "claimed_until" timestamptz,
         "created_at" timestamptz NOT NULL,
         CONSTRAINT "PK_0171348f527c64b137e4d4f5b66" PRIMARY KEY ("id"),
         CONSTRAINT "ck_outbox_messages_attempts_nonnegative" CHECK ("attempts" >= 0)
@@ -138,6 +145,11 @@ export class CreateWageringSchema1793903127823 implements MigrationInterface {
     await queryRunner.query(`
       CREATE INDEX "ix_outbox_messages_pending_retry"
       ON "outbox_messages" ("next_attempt_at", "occurred_at")
+      WHERE "published_at" IS NULL
+    `);
+    await queryRunner.query(`
+      CREATE INDEX "ix_outbox_messages_claim_lease"
+      ON "outbox_messages" ("claimed_until")
       WHERE "published_at" IS NULL
     `);
   }
